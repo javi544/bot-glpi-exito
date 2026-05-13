@@ -1,0 +1,21 @@
+.env
+perfil_whatsapp/
+perfil_monitor/
+*.png
+*.log
+logs/
+registro_mensajes.txt
+mensajes_procesados.txt
+registro_productividad.txt
+__pycache__/
+*.pyc
+*.csv
+Control de Versiones/
+avance_anterior.json
+control_cambios.json
+estado_tecnicos.json
+ultimo_mensaje.txt
+Eliminar carpeta perfil bot.txt
+guardar perfil whatsapp.txt
+*.docx
+*.json
