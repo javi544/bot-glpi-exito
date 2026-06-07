@@ -1,24 +1,69 @@
-# Datos sensibles - NUNCA subir
+# ─────────────────────────────────────────────────────
+# DATOS SENSIBLES — nunca subir al repositorio
+# ─────────────────────────────────────────────────────
+
+# Carpetas de datos operativos
 glpi/
 partes/
 pl/
-modelos/*.joblib
+logs/
+perfil_whatsapp/
+perfil_monitor/
+Control de Versiones/
+
+# Archivos Excel con datos reales
 *.xlsx
 *.xls
 *.csv
-log_*.txt
-reporte_*.txt
+
+# Archivos de estado y logs del bot
+*.log
+*.json
+*.txt
+
+# Imágenes de capturas del bot
+*.png
+*.jpg
+*.jpeg
+
+# Archivos Word con propuestas/documentación interna
+*.docx
+*.doc
+
+# Archivos temporales de Excel (empiezan con ~$)
 ~$*
 
-# Sistema
+# ─────────────────────────────────────────────────────
+# ARCHIVOS DEL SISTEMA
+# ─────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
 .env
+.venv
+venv/
 .vscode/
+*.code-workspace
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
+.DS_Store
 
-# Mantener carpetas vacias
+# ─────────────────────────────────────────────────────
+# MODELOS ENTRENADOS (datos privados compilados)
+# ─────────────────────────────────────────────────────
+modelos/*.joblib
+
+# ─────────────────────────────────────────────────────
+# EXCEPCIONES — estos SÍ deben estar en el repo
+# ─────────────────────────────────────────────────────
+!*.py
+!*.bat
+!*.md
+!requirements.txt
+!.gitignore
+
+# Carpetas vacías con placeholder
 !glpi/.gitkeep
 !partes/.gitkeep
 !pl/.gitkeep
