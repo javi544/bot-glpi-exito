@@ -1,21 +1,25 @@
-.env
-perfil_whatsapp/
-perfil_monitor/
-*.png
-*.log
-logs/
-registro_mensajes.txt
-mensajes_procesados.txt
-registro_productividad.txt
+# Datos sensibles - NUNCA subir
+glpi/
+partes/
+pl/
+modelos/*.joblib
+*.xlsx
+*.xls
+*.csv
+log_*.txt
+reporte_*.txt
+~$*
+
+# Sistema
 __pycache__/
 *.pyc
-*.csv
-Control de Versiones/
-avance_anterior.json
-control_cambios.json
-estado_tecnicos.json
-ultimo_mensaje.txt
-Eliminar carpeta perfil bot.txt
-guardar perfil whatsapp.txt
-*.docx
-*.json
+.env
+.vscode/
+Thumbs.db
+desktop.ini
+
+# Mantener carpetas vacias
+!glpi/.gitkeep
+!partes/.gitkeep
+!pl/.gitkeep
+!modelos/.gitkeep
