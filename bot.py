@@ -144,18 +144,60 @@ def iniciar_driver():
 def login(driver):
     logging.info("🔐 Entrando a GLPI...")
     driver.get(CONFIG["url_login"])
-    WebDriverWait(driver, 15).until(
+    WebDriverWait(driver, 20).until(
         lambda d: d.execute_script("return document.readyState") == "complete"
     )
-    if "Authentication" not in driver.title:
+    time.sleep(2)
+
+    if "Authentication" not in driver.title and "login" not in driver.current_url.lower():
         logging.info("✅ Sesión GLPI activa")
         return
-    WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.ID, "login_name"))
-    ).send_keys(CONFIG["usuario"])
-    driver.find_element(By.ID, "login_password").send_keys(CONFIG["password"] + Keys.ENTER)
-    WebDriverWait(driver, 20).until(lambda d: "Authentication" not in d.title)
-    logging.info("✅ Login GLPI exitoso")
+
+    logging.info("🔑 Iniciando sesión en GLPI...")
+    try:
+        campo_usuario = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.ID, "login_name"))
+        )
+        time.sleep(1)
+
+        # Pasar credenciales como argumentos — evita problemas con caracteres especiales y llaves
+        usuario  = CONFIG["usuario"]
+        password = CONFIG["password"]
+
+        driver.execute_script("arguments[0].value = arguments[1];", campo_usuario, usuario)
+        driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_usuario)
+        driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles: true}));", campo_usuario)
+        time.sleep(0.5)
+        logging.info(f"  ✅ Usuario ingresado: {usuario}")
+
+        campo_pass = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "login_password"))
+        )
+        driver.execute_script("arguments[0].value = arguments[1];", campo_pass, password)
+        driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_pass)
+        driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles: true}));", campo_pass)
+        time.sleep(0.5)
+        logging.info("  ✅ Contraseña ingresada")
+
+        try:
+            btn = driver.find_element(By.XPATH,
+                "//button[@type='submit'] | //input[@type='submit'] | //button[contains(text(),'Iniciar')]"
+            )
+            driver.execute_script("arguments[0].click();", btn)
+            logging.info("  ✅ Clic en Iniciar sesión")
+        except Exception:
+            campo_pass.send_keys(Keys.ENTER)
+            logging.info("  ✅ Enter enviado")
+
+        WebDriverWait(driver, 20).until(
+            lambda d: "Authentication" not in d.title and "login" not in d.current_url.lower()
+        )
+        time.sleep(2)
+        logging.info("✅ Login GLPI exitoso")
+
+    except Exception as e:
+        driver.save_screenshot("error_login.png")
+        raise Exception(f"Error en login GLPI: {e}")
 
 
 # =========================
