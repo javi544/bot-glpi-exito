@@ -155,30 +155,58 @@ def login(driver):
 
     logging.info("🔑 Iniciando sesión en GLPI...")
     try:
-        campo_usuario = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.ID, "login_name"))
-        )
-        time.sleep(1)
-
-        # Pasar credenciales como argumentos — evita problemas con caracteres especiales y llaves
         usuario  = CONFIG["usuario"]
         password = CONFIG["password"]
 
-        driver.execute_script("arguments[0].value = arguments[1];", campo_usuario, usuario)
-        driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_usuario)
-        driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles: true}));", campo_usuario)
-        time.sleep(0.5)
-        logging.info(f"  ✅ Usuario ingresado: {usuario}")
-
-        campo_pass = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "login_password"))
+        campo_usuario = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.ID, "login_name"))
         )
-        driver.execute_script("arguments[0].value = arguments[1];", campo_pass, password)
-        driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_pass)
-        driver.execute_script("arguments[0].dispatchEvent(new Event('change', {bubbles: true}));", campo_pass)
-        time.sleep(0.5)
-        logging.info("  ✅ Contraseña ingresada")
+        time.sleep(1)
 
+        # Método 1: JavaScript directo
+        try:
+            driver.execute_script("arguments[0].value = arguments[1];", campo_usuario, usuario)
+            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_usuario)
+            # Verificar que escribió
+            val = driver.execute_script("return arguments[0].value;", campo_usuario)
+            if not val:
+                raise Exception("Campo vacío tras JS")
+            logging.info(f"  ✅ Usuario via JS: {val}")
+        except Exception:
+            # Método 2: click + clear + send_keys caracter a caracter
+            logging.info("  ↩️  Fallback a send_keys...")
+            campo_usuario.click()
+            time.sleep(0.3)
+            campo_usuario.clear()
+            time.sleep(0.2)
+            for c in usuario:
+                campo_usuario.send_keys(c)
+                time.sleep(0.05)
+            logging.info(f"  ✅ Usuario via send_keys")
+
+        # Campo contraseña
+        campo_pass = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "login_password"))
+        )
+        try:
+            driver.execute_script("arguments[0].value = arguments[1];", campo_pass, password)
+            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_pass)
+            val = driver.execute_script("return arguments[0].value;", campo_pass)
+            if not val:
+                raise Exception("Campo vacío tras JS")
+            logging.info("  ✅ Contraseña via JS")
+        except Exception:
+            logging.info("  ↩️  Fallback contraseña a send_keys...")
+            campo_pass.click()
+            time.sleep(0.3)
+            campo_pass.clear()
+            time.sleep(0.2)
+            for c in password:
+                campo_pass.send_keys(c)
+                time.sleep(0.05)
+            logging.info("  ✅ Contraseña via send_keys")
+
+        # Clic en Iniciar sesión
         try:
             btn = driver.find_element(By.XPATH,
                 "//button[@type='submit'] | //input[@type='submit'] | //button[contains(text(),'Iniciar')]"
