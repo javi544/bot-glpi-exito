@@ -129,6 +129,12 @@ def iniciar_driver():
     options = Options()
     options.add_argument("--start-maximized")
     options.add_argument(f"user-data-dir={CONFIG['perfil_whatsapp']}")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--remote-debugging-port=0")
+    options.add_argument("--no-first-run")
+    options.add_argument("--disable-extensions")
     prefs = {
         "download.default_directory": CONFIG["carpeta_descargas"],
         "download.prompt_for_download": False,
@@ -144,88 +150,18 @@ def iniciar_driver():
 def login(driver):
     logging.info("🔐 Entrando a GLPI...")
     driver.get(CONFIG["url_login"])
-    WebDriverWait(driver, 20).until(
+    WebDriverWait(driver, 15).until(
         lambda d: d.execute_script("return document.readyState") == "complete"
     )
-    time.sleep(2)
-
-    if "Authentication" not in driver.title and "login" not in driver.current_url.lower():
+    if "Authentication" not in driver.title:
         logging.info("✅ Sesión GLPI activa")
         return
-
-    logging.info("🔑 Iniciando sesión en GLPI...")
-    try:
-        usuario  = CONFIG["usuario"]
-        password = CONFIG["password"]
-
-        campo_usuario = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.ID, "login_name"))
-        )
-        time.sleep(1)
-
-        # Método 1: JavaScript directo
-        try:
-            driver.execute_script("arguments[0].value = arguments[1];", campo_usuario, usuario)
-            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_usuario)
-            # Verificar que escribió
-            val = driver.execute_script("return arguments[0].value;", campo_usuario)
-            if not val:
-                raise Exception("Campo vacío tras JS")
-            logging.info(f"  ✅ Usuario via JS: {val}")
-        except Exception:
-            # Método 2: click + clear + send_keys caracter a caracter
-            logging.info("  ↩️  Fallback a send_keys...")
-            campo_usuario.click()
-            time.sleep(0.3)
-            campo_usuario.clear()
-            time.sleep(0.2)
-            for c in usuario:
-                campo_usuario.send_keys(c)
-                time.sleep(0.05)
-            logging.info(f"  ✅ Usuario via send_keys")
-
-        # Campo contraseña
-        campo_pass = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "login_password"))
-        )
-        try:
-            driver.execute_script("arguments[0].value = arguments[1];", campo_pass, password)
-            driver.execute_script("arguments[0].dispatchEvent(new Event('input', {bubbles: true}));", campo_pass)
-            val = driver.execute_script("return arguments[0].value;", campo_pass)
-            if not val:
-                raise Exception("Campo vacío tras JS")
-            logging.info("  ✅ Contraseña via JS")
-        except Exception:
-            logging.info("  ↩️  Fallback contraseña a send_keys...")
-            campo_pass.click()
-            time.sleep(0.3)
-            campo_pass.clear()
-            time.sleep(0.2)
-            for c in password:
-                campo_pass.send_keys(c)
-                time.sleep(0.05)
-            logging.info("  ✅ Contraseña via send_keys")
-
-        # Clic en Iniciar sesión
-        try:
-            btn = driver.find_element(By.XPATH,
-                "//button[@type='submit'] | //input[@type='submit'] | //button[contains(text(),'Iniciar')]"
-            )
-            driver.execute_script("arguments[0].click();", btn)
-            logging.info("  ✅ Clic en Iniciar sesión")
-        except Exception:
-            campo_pass.send_keys(Keys.ENTER)
-            logging.info("  ✅ Enter enviado")
-
-        WebDriverWait(driver, 20).until(
-            lambda d: "Authentication" not in d.title and "login" not in d.current_url.lower()
-        )
-        time.sleep(2)
-        logging.info("✅ Login GLPI exitoso")
-
-    except Exception as e:
-        driver.save_screenshot("error_login.png")
-        raise Exception(f"Error en login GLPI: {e}")
+    WebDriverWait(driver, 20).until(
+        EC.presence_of_element_located((By.ID, "login_name"))
+    ).send_keys(CONFIG["usuario"])
+    driver.find_element(By.ID, "login_password").send_keys(CONFIG["password"] + Keys.ENTER)
+    WebDriverWait(driver, 20).until(lambda d: "Authentication" not in d.title)
+    logging.info("✅ Login GLPI exitoso")
 
 
 # =========================
