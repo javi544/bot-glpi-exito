@@ -42,7 +42,7 @@ META_MARGEN_PCT  = 25.0      # margen objetivo del proyecto (%)
 META_SLA_PCT     = 85.0      # % de tickets que deben cumplir SLA
 META_TICKETS_SEM = 15        # tickets por técnico por semana
 
-MESES_PROYECTO   = ["APR-25","MAY-25","JUN-25","JUL-25","AUG-25","SEP-25"]
+# MESES_PROYECTO se detecta automáticamente del P&L
 
 MAPA_REGIONAL = {
     "Reg. Bogotá":"Bogota", "Reg. Bogota":"Bogota", "Regional Bogota":"Bogota",
@@ -73,8 +73,14 @@ if ARCHIVO_PL is None:
     pl_ok = False
 else:
     try:
-        df_rev = pd.read_excel(ARCHIVO_PL, sheet_name="Revenue 2025")
-        df_cos = pd.read_excel(ARCHIVO_PL, sheet_name="Costo 2025")
+        # Auto-detectar hoja de Revenue (Revenue 2025, Revenue 2026, etc.)
+        _xl_pl = pd.ExcelFile(ARCHIVO_PL)
+        _rev_sheet = next((s for s in _xl_pl.sheet_names if s.startswith("Revenue")), None)
+        _cos_sheet = next((s for s in _xl_pl.sheet_names if s.startswith("Costo")), None)
+        if not _rev_sheet or not _cos_sheet:
+            raise ValueError(f"No se encontraron hojas Revenue/Costo. Hojas disponibles: {_xl_pl.sheet_names}")
+        df_rev = pd.read_excel(ARCHIVO_PL, sheet_name=_rev_sheet)
+        df_cos = pd.read_excel(ARCHIVO_PL, sheet_name=_cos_sheet)
         df_rev["USD"] = pd.to_numeric(df_rev["USD_AMOUNT_ACCTD_D_C"], errors="coerce").fillna(0)
         df_cos["USD"] = pd.to_numeric(df_cos["USD_AMOUNT_ACCTD_D_C"], errors="coerce").fillna(0)
         df_rev["PERIOD_NAME"] = df_rev["PERIOD_NAME"].astype(str).str.strip()
@@ -133,7 +139,7 @@ if pl_ok:
     acum_pv = 0; acum_ev = 0; acum_ac = 0
     datos_evm = []
 
-    for i, mes in enumerate(MESES_PROYECTO):
+    for i, mes in enumerate(sorted(df_rev["PERIOD_NAME"].dropna().unique())):
         pv  = BAC_MENSUAL_USD                        # Planned Value: presupuesto planificado mensual
         ev  = rev_mes.get(mes, 0)                    # Earned Value: revenue facturado = trabajo completado
         ac  = abs(cos_mes.get(mes, 0))               # Actual Cost: costos reales del mes
@@ -205,7 +211,7 @@ if df_glpi is not None:
     # Calidad por mes
     print(f"\n  {'Mes':<10} {'Tickets':>8} {'SLA OK':>8} {'SLA NOK':>8} {'%Cumple':>8} {'Estado'}")
     print("  " + "─"*58)
-    for mes in MESES_PROYECTO:
+    for mes in sorted(df_rev["PERIOD_NAME"].dropna().unique()):
         sub = df_glpi[df_glpi["mes"].str.contains(mes[:3], case=False, na=False)]
         if len(sub) == 0: continue
         ok  = (sub["sla_excedido"] == 0).sum()
