@@ -68,8 +68,8 @@ TECNICOS_EXCLUIR = [
 BODEGA_REGIONAL = {
     "COBOG01": "Bogota",
     "COMED02": "Medellin",
-    "CLSCL01": "Cali",
-    "COCLO02": "Costa",
+    "CLSCL01": "Chile",
+    "COCLO02": "Cali",
     "COBAQ02": "Costa",
 }
 
@@ -511,9 +511,9 @@ if df_partes is not None:
     BODEGA_NOMBRE = {
         "COBOG01": "Bogota",
         "COMED02": "Medellin",
-        "CLSCL01": "Cali",
-        "COCLO02": "Costa",
+        "COCLO02": "Cali",
         "COBAQ02": "Costa",
+        "CLSCL01": "Chile",
     }
     frus_cero = df_partes[df_partes["Total On Hand Qty"] == 0].copy()
     frus_cero["regional"] = frus_cero["Warehouse Code"].map(BODEGA_NOMBRE).fillna("Otra")
@@ -530,7 +530,7 @@ if df_partes is not None:
     print("\n  RESUMEN POR BODEGA:")
     print(f"  {'Regional':<12} {'Bodega':<10} {'FRUs Cero':>10} {'Stock Bajo':>11} {'Con PO':>7}")
     print("  " + "-"*54)
-    for bodega, reg in {"COBOG01":"Bogota","COMED02":"Medellin","CLSCL01":"Cali","COCLO02":"Costa","COBAQ02":"Costa"}.items():
+    for bodega, reg in {"COBOG01":"Bogota","COMED02":"Medellin","COCLO02":"Cali","COBAQ02":"Costa","CLSCL01":"Chile"}.items():
         sub = df_partes[df_partes["Warehouse Code"] == bodega]
         if len(sub) == 0: continue
         ceros  = (sub["Total On Hand Qty"] == 0).sum()
