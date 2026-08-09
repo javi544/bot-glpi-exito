@@ -328,14 +328,25 @@ def generar_mensaje(regional, meta_regional, asignados, cerrados, data, modo):
         msg += f"✅ Cierres hoy:    *{total_cierres}/{meta_regional}*\n"
         msg += f"{icono_r} Avance regional: {barra_progreso(avance)} *{avance:.0f}%*\n"
         msg += "━━━━━━━━━━━━━━━━━━━━\n"
+
+        # Top del día y top 3 más bajos en el encabezado
+        top  = max(data, key=lambda t: t.cerrados) if data else None
+        bajos = sorted(data, key=lambda t: t.cerrados)[:3] if data else []
+
+        if top and top.cerrados > 0:
+            msg += f"🏆 *Top del día:* {top.nombre} ({top.cerrados}/{top.meta}) ✅ Cumple\n"
+        if bajos:
+            msg += f"📉 *Muy bajo en productividad:*\n"
+            for b in bajos:
+                if b != top:
+                    msg += f"   🔴 {b.nombre} ({b.cerrados}/{b.meta})\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+
         msg += f"👤 *Detalle por Técnico* (meta: {meta_t})\n\n"
         for t in data:
             animo = mensaje_animo(t.cerrados, t.meta)
             msg += f"{t.nombre}\n"
             msg += f"{barra_progreso(t.avance)} {t.avance:.0f}% ({t.cerrados}/{t.meta}) — {animo}\n\n"
-        top = max(data, key=lambda t: t.cerrados) if data else None
-        if top and top.cerrados > 0:
-            msg += f"\n🏆 *Top del día:* {top.nombre} ({top.cerrados} cierres)\n"
 
     msg += "━━━━━━━━━━━━━━━━━━━━\n"
     msg += "_🤖 Bot desarrollado por el Ing. Javier Trujillo_"
