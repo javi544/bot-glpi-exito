@@ -642,9 +642,7 @@ try:
         "tickets_riesgo": [],
         "frus_riesgo": [],
     }
-    print(f"  DEBUG: prob_riesgo existe: {'prob_riesgo' in df.columns}, abierto_activo existe: {'abierto_activo' in df.columns}")
     if "prob_riesgo" in df.columns:
-        print(f"  DEBUG: valores prob_riesgo: min={df['prob_riesgo'].min():.6f} max={df['prob_riesgo'].max():.6f}")
         _activos_mask = df["Estado"].astype(str).isin(["En curso (asignada)","En curso (planificada)","En espera"])
         top = df[_activos_mask].sort_values("prob_riesgo", ascending=False).head(20)
         for _, r in top.iterrows():
