@@ -626,6 +626,53 @@ print("""
 # ════════════════════════════════════════════════════════════════
 # RESUMEN FINAL
 # ════════════════════════════════════════════════════════════════
+
+# Exportar predicciones para el dashboard
+try:
+    import json as _json
+    _predicciones = {
+        "generado_en": datetime.now().isoformat(),
+        "archivo_glpi": os.path.basename(archivos_glpi[0]) if archivos_glpi else "",
+        "resumen": {
+            "total_tickets": int(len(df)),
+            "tickets_en_riesgo": int(df["en_riesgo"].sum()),
+            "frus_criticas": int((df_partes["Total On Hand Qty"]==0).sum()) if df_partes is not None else 0,
+            "pct_sla": round((1 - df["sla_excedido"].mean()) * 100, 1),
+        },
+        "tickets_riesgo": [],
+        "frus_riesgo": [],
+    }
+    print(f"  DEBUG: prob_riesgo existe: {'prob_riesgo' in df.columns}, abierto_activo existe: {'abierto_activo' in df.columns}")
+    if "prob_riesgo" in df.columns:
+        print(f"  DEBUG: valores prob_riesgo: min={df['prob_riesgo'].min():.6f} max={df['prob_riesgo'].max():.6f}")
+        _activos_mask = df["Estado"].astype(str).isin(["En curso (asignada)","En curso (planificada)","En espera"])
+        top = df[_activos_mask].sort_values("prob_riesgo", ascending=False).head(20)
+        for _, r in top.iterrows():
+            _predicciones["tickets_riesgo"].append({
+                "id": str(r.get("Tiquete","")),
+                "regional": str(r.get("regional","")),
+                "ci": str(r.get("CI",""))[:40],
+                "dias": int(r.get("dias_abierto",0)),
+                "sla_excedido": int(r.get("sla_excedido",0)),
+                "prob": round(float(r.get("prob_riesgo",0))*100, 4),
+            })
+    if df_partes is not None:
+        top_frus = df_partes[df_partes["Total On Hand Qty"]==0].sort_values("Total Open PO Qty", ascending=False).head(15)
+        for _, r in top_frus.iterrows():
+            _predicciones["frus_riesgo"].append({
+                "Warehouse Code": str(r.get("Warehouse Code","")),
+                "Part Number": str(r.get("Part Number","")),
+                "Part Description": str(r.get("Part Description",""))[:45],
+                "Total On Hand Qty": int(r.get("Total On Hand Qty",0)),
+                "Total Open PO Qty": int(r.get("Total Open PO Qty",0)),
+            })
+    _ruta = os.path.join(CARPETA_BASE, "predicciones.json")
+    with open(_ruta, "w", encoding="utf-8") as _fj:
+        _json.dump(_predicciones, _fj, ensure_ascii=False, indent=2)
+    print(f"  OK Predicciones guardadas: {_ruta}")
+except Exception as _e:
+    print(f"  AVISO exportacion: {_e}")
+
 seccion("RESUMEN EJECUTIVO")
 n_partes = len(df_partes) if df_partes is not None else 0
 print(f"  Dataset GLPI:  {len(df):,} tickets reales (ene 2025 - may 2026)")
