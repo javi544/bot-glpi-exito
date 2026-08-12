@@ -68,3 +68,5 @@ modelos/*.joblib
 !partes/.gitkeep
 !pl/.gitkeep
 !modelos/.gitkeep
+
+pl/P_L_2025_Maintenance_Colombia_Sep.xlsx
