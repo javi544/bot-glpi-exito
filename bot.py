@@ -125,7 +125,17 @@ def construir_url_csv_cerrados(filtro):
 # =========================
 # DRIVER
 # =========================
+def limpiar_cache_driver():
+    """Elimina el caché de ChromeDriver para forzar descarga de la versión correcta."""
+    import shutil
+    cache = os.path.join(os.path.expanduser("~"), ".wdm")
+    if os.path.exists(cache):
+        shutil.rmtree(cache, ignore_errors=True)
+        logging.info("🗑️  Caché de ChromeDriver limpiado")
+
+
 def iniciar_driver():
+    limpiar_cache_driver()
     options = Options()
     options.add_argument("--start-maximized")
     options.add_argument(f"user-data-dir={CONFIG['perfil_whatsapp']}")
