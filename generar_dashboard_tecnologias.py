@@ -39,7 +39,7 @@ def clasificar_tecnologia(categoria):
         return "📱 Terminal HandHeld"
     elif "balanza" in cat or "bioptico" in cat or "escanner balanza" in cat:
         return "⚖️ Balanzas"
-    elif "puesto de pago" in cat or "pos autopago" in cat or "sco" in cat:
+    elif "puesto de pago" in cat or "pos autopago" in cat or "sco" in cat or "pos terminal" in cat:
         return "🖥️ Puestos de Pago"
     elif "imp marcacion" in cat or "impresora" in cat or "imp laser" in cat:
         return "🖨️ Impresoras"
@@ -51,6 +51,10 @@ def clasificar_tecnologia(categoria):
         return "⏰ Control Biométrico"
     elif "aplicaciones" in cat or "sistema operativo" in cat or "windows" in cat:
         return "💾 Aplicaciones"
+    elif "manos remotas" in cat:
+        return "🖐️ Manos Remotas"
+    elif "acompañamiento" in cat or ("equipo" in cat and any(kw in cat for kw in ["asigna", "reposici", "retiro"])):
+        return "📋 Gestión de Equipos"
     else:
         return "📦 Otros"
 
@@ -433,7 +437,8 @@ const DATA = {data_json};
 
 const COLORES = [
   '#2E75B6','#43a047','#fb8c00','#e53935','#8e24aa',
-  '#00897b','#f4511e','#1e88e5','#6d4c41','#546e7a'
+  '#00897b','#f4511e','#1e88e5','#6d4c41','#546e7a',
+  '#c0ca33','#5e35b1'
 ];
 
 let tabActual = 'backlog';
