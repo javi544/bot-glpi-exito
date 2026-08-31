@@ -5,6 +5,7 @@ Se integra al bot_alertas.py para ejecutarse automáticamente.
 import os
 import glob
 import json
+import base64
 import shutil
 import subprocess
 import pandas as pd
@@ -16,6 +17,16 @@ from datetime import datetime, timedelta
 CARPETA_DATA    = os.path.join(os.path.dirname(__file__), "data")
 REPO_DASHBOARD  = "C:/dashboard-tecnologias-exito"
 ARCHIVO_SALIDA  = os.path.join(REPO_DASHBOARD, "index.html")
+LOGO_TOSHIBA    = os.path.join(os.path.dirname(__file__), "Logo_Toshiba.png")
+
+
+def logo_base64():
+    """Codifica el logo de Toshiba como data URI para incrustarlo en el HTML."""
+    try:
+        with open(LOGO_TOSHIBA, "rb") as f:
+            return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    except FileNotFoundError:
+        return ""
 
 # Agrupación de tecnologías
 def clasificar_tecnologia(categoria):
@@ -107,26 +118,33 @@ def preparar_datos(df):
         con_tecnico=(col_tecnico, lambda x: x.notna().sum())
     ).reset_index()
 
-    # 5. Tendencia semanal — leer CSVs de la semana
+    # 5. Tendencia semanal — leer CSVs de la semana, con desglose por tecnología
     semana_data = []
+    semana_tec_data = []
     for i in range(7):
-        fecha = (ahora - timedelta(days=i)).strftime("%Y%m%d")
+        fecha_dt = ahora - timedelta(days=i)
+        fecha_str = fecha_dt.strftime("%Y%m%d")
         total_dia = 0
+        conteo_tec = {}
         for regional in REGIONALES:
-            patron = os.path.join(CARPETA_DATA, f"alertas_{regional.lower()}_{fecha}.csv")
+            patron = os.path.join(CARPETA_DATA, f"alertas_{regional.lower()}_{fecha_str}.csv")
             archivos = glob.glob(patron)
             if archivos:
                 try:
                     df_dia = pd.read_csv(archivos[0], encoding="utf-8-sig", on_bad_lines='skip')
                     total_dia += len(df_dia)
+                    tec_dia = df_dia['Categoría'].apply(clasificar_tecnologia)
+                    for tec, cnt in tec_dia.value_counts().items():
+                        conteo_tec[tec] = conteo_tec.get(tec, 0) + int(cnt)
                 except Exception:
                     pass
         if total_dia > 0:
-            semana_data.append({
-                "fecha": (ahora - timedelta(days=i)).strftime("%d/%m"),
-                "total": total_dia
-            })
+            fecha_fmt = fecha_dt.strftime("%d/%m")
+            semana_data.append({"fecha": fecha_fmt, "total": total_dia})
+            for tec, cnt in conteo_tec.items():
+                semana_tec_data.append({"fecha": fecha_fmt, "Tecnologia": tec, "total": cnt})
     semana_data.reverse()
+    semana_tec_data.reverse()
 
     # 6. Antigüedad por rangos — parseo robusto de fecha
     df['_fecha_ap'] = pd.to_datetime(df['Fecha de apertura'],
@@ -180,6 +198,7 @@ def preparar_datos(df):
         "tecnicos":        tecnicos_regional.to_dict('records'),
         "comp_regional":   comp_regional.to_dict('records'),
         "semana":          semana_data,
+        "semana_tec":      semana_tec_data,
         "ant_tec":         ant_tec.to_dict('records'),
         "ant_reg":         ant_reg.to_dict('records'),
         "detalle_ant":     detalle_ant.to_dict('records'),
@@ -194,6 +213,8 @@ def preparar_datos(df):
 def generar_html(datos):
     """Genera el dashboard HTML interactivo."""
     data_json = json.dumps(datos, ensure_ascii=False)
+    logo_src = logo_base64()
+    logo_img_tag = f'<img src="{logo_src}" alt="Toshiba" class="logo-toshiba">' if logo_src else ''
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -205,12 +226,13 @@ def generar_html(datos):
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:'Segoe UI',sans-serif; background:#f0f2f5; color:#222; }}
-header {{ background:linear-gradient(135deg,#1F3864,#2E75B6); color:white; padding:20px 32px; display:flex; justify-content:space-between; align-items:center; }}
+header {{ background:linear-gradient(135deg,#B30000,#FF0000); color:white; padding:20px 32px; display:flex; justify-content:space-between; align-items:center; }}
 header h1 {{ font-size:22px; }}
+.logo-toshiba {{ height:32px; display:block; margin-bottom:6px; filter:brightness(0) invert(1); }}
 header span {{ font-size:13px; opacity:.85; }}
-.tabs {{ display:flex; background:#1F3864; padding:0 32px; overflow-x:auto; }}
+.tabs {{ display:flex; background:#B30000; padding:0 32px; overflow-x:auto; }}
 .tab {{ padding:12px 22px; color:rgba(255,255,255,.7); cursor:pointer; font-size:14px; border-bottom:3px solid transparent; white-space:nowrap; transition:all .2s; }}
-.tab.active {{ color:white; border-bottom-color:#FFD700; }}
+.tab.active {{ color:white; border-bottom-color:#ffffff; }}
 .tab:hover {{ color:white; }}
 .filters {{ background:white; padding:12px 32px; display:flex; gap:12px; flex-wrap:wrap; border-bottom:1px solid #e0e0e0; align-items:center; }}
 .filters select {{ padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }}
@@ -219,7 +241,7 @@ header span {{ font-size:13px; opacity:.85; }}
 .panel {{ display:none; }}
 .panel.active {{ display:block; }}
 .stats {{ display:flex; gap:16px; margin-bottom:24px; flex-wrap:wrap; }}
-.stat {{ background:white; border-radius:10px; padding:16px 24px; flex:1; min-width:140px; box-shadow:0 2px 8px rgba(0,0,0,.07); border-left:4px solid #2E75B6; }}
+.stat {{ background:white; border-radius:10px; padding:16px 24px; flex:1; min-width:140px; box-shadow:0 2px 8px rgba(0,0,0,.07); border-left:4px solid #FF0000; }}
 .stat.green {{ border-left-color:#43a047; }}
 .stat.orange {{ border-left-color:#fb8c00; }}
 .stat.red {{ border-left-color:#e53935; }}
@@ -229,9 +251,9 @@ header span {{ font-size:13px; opacity:.85; }}
 .grid-2 {{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }}
 .grid-3 {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom:20px; }}
 .card {{ background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,.07); }}
-.card h3 {{ font-size:15px; font-weight:600; color:#1F3864; margin-bottom:16px; border-bottom:2px solid #e8f0fe; padding-bottom:8px; }}
+.card h3 {{ font-size:15px; font-weight:600; color:#B30000; margin-bottom:16px; border-bottom:2px solid #ffe5e5; padding-bottom:8px; }}
 table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-th {{ background:#1F3864; color:white; padding:10px 12px; text-align:left; font-weight:600; }}
+th {{ background:#B30000; color:white; padding:10px 12px; text-align:left; font-weight:600; }}
 td {{ padding:9px 12px; border-bottom:1px solid #f0f0f0; }}
 tr:hover td {{ background:#f5f8ff; }}
 .badge {{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }}
@@ -245,10 +267,10 @@ tr:hover td {{ background:#f5f8ff; }}
 .bar-bg {{ background:#f0f0f0; border-radius:4px; height:12px; overflow:hidden; }}
 .bar-fill {{ height:100%; border-radius:4px; transition:width .5s; }}
 .no-data {{ text-align:center; padding:40px; color:#999; }}
-.card-header-flex {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #e8f0fe; padding-bottom:8px; }}
+.card-header-flex {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #ffe5e5; padding-bottom:8px; }}
 .card-header-flex h3 {{ margin-bottom:0; border-bottom:none; padding-bottom:0; }}
-.btn-export {{ padding:7px 14px; background:#2E75B6; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }}
-.btn-export:hover {{ background:#1F3864; }}
+.btn-export {{ padding:7px 14px; background:#FF0000; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }}
+.btn-export:hover {{ background:#B30000; }}
 @media(max-width:768px) {{ .grid-2,.grid-3 {{ grid-template-columns:1fr; }} .content {{ padding:16px; }} }}
 footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-top:1px solid #e0e0e0; margin-top:20px; }}
 </style>
@@ -257,6 +279,7 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
 
 <header>
   <div>
+    {logo_img_tag}
     <h1>📊 Dashboard Tecnologías — IT en Sitio</h1>
     <div>Grupo Éxito — Toshiba GCS Colombia</div>
   </div>
@@ -638,30 +661,35 @@ function renderTecnicos() {{
 
 // ── SEMANA ──
 function renderSemana() {{
-  const rows = DATA.semana;
+  const f = getFiltros();
+  const fechas = DATA.semana.map(r => r.fecha);
+  const tecs = f.tec ? [f.tec] : [...new Set(DATA.semana_tec.map(r => r.Tecnologia))].sort();
+
+  const datasets = tecs.map((t, i) => ({{
+    label: t,
+    data: fechas.map(fc => DATA.semana_tec.find(r => r.fecha === fc && r.Tecnologia === t)?.total || 0),
+    backgroundColor: COLORES[i % COLORES.length]
+  }}));
+
   destroyChart('semana');
   charts['semana'] = new Chart(document.getElementById('chart-semana'), {{
-    type: 'line',
-    data: {{
-      labels: rows.map(r => r.fecha),
-      datasets: [{{
-        label: 'Backlog total',
-        data: rows.map(r => r.total),
-        borderColor: '#2E75B6',
-        backgroundColor: 'rgba(46,117,182,0.1)',
-        tension: 0.4,
-        fill: true,
-        pointRadius: 5,
-        pointBackgroundColor: '#2E75B6'
-      }}]
-    }},
-    options: {{ plugins:{{legend:{{display:false}}}}, scales:{{y:{{beginAtZero:false}}}} }}
+    type: 'bar',
+    data: {{ labels: fechas, datasets: datasets }},
+    options: {{
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ font: {{ size: 11 }} }} }} }},
+      scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true }} }}
+    }}
   }});
+
+  const rowsTabla = fechas.map((fc, idx) => ({{
+    fecha: fc,
+    total: datasets.reduce((s, ds) => s + ds.data[idx], 0)
+  }}));
 
   const tbody = document.getElementById('tabla-semana');
   tbody.innerHTML = '';
-  rows.forEach((r, i) => {{
-    const prev = i > 0 ? rows[i-1].total : null;
+  rowsTabla.forEach((r, i) => {{
+    const prev = i > 0 ? rowsTabla[i-1].total : null;
     const diff = prev !== null ? r.total - prev : null;
     const varStr = diff === null ? '-' :
       diff > 0 ? `<span style="color:#e53935">▲ ${{diff}}</span>` :
