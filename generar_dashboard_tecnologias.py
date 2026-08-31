@@ -166,6 +166,8 @@ def preparar_datos(df):
     # NO ordenar antes de tomar muestra — tomar todos y ordenar después
     detalle_ant = detalle_ant.sort_values('dias_abierto', ascending=False)
 
+    grupos_list = sorted(detalle_ant['grupo_limpio'].dropna().unique().tolist()) if 'grupo_limpio' in detalle_ant.columns else []
+
     # DIAGNÓSTICO
     print("=== DIAGNÓSTICO ANTIGÜEDAD ===")
     print("dias_abierto sample:", df['dias_abierto'].dropna().head(10).tolist())
@@ -184,6 +186,7 @@ def preparar_datos(df):
         "total_tickets":   len(df),
         "regionales":      REGIONALES,
         "tecnologias":     sorted(df['Tecnologia'].unique().tolist()),
+        "grupos":          grupos_list,
         "fecha":           ahora.strftime("%d/%m/%Y %H:%M"),
     }
 
@@ -242,6 +245,10 @@ tr:hover td {{ background:#f5f8ff; }}
 .bar-bg {{ background:#f0f0f0; border-radius:4px; height:12px; overflow:hidden; }}
 .bar-fill {{ height:100%; border-radius:4px; transition:width .5s; }}
 .no-data {{ text-align:center; padding:40px; color:#999; }}
+.card-header-flex {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #e8f0fe; padding-bottom:8px; }}
+.card-header-flex h3 {{ margin-bottom:0; border-bottom:none; padding-bottom:0; }}
+.btn-export {{ padding:7px 14px; background:#2E75B6; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }}
+.btn-export:hover {{ background:#1F3864; }}
 @media(max-width:768px) {{ .grid-2,.grid-3 {{ grid-template-columns:1fr; }} .content {{ padding:16px; }} }}
 footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-top:1px solid #e0e0e0; margin-top:20px; }}
 </style>
@@ -273,6 +280,10 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
   <label>Tecnología:</label>
   <select id="filtro-tec" onchange="aplicarFiltros()">
     <option value="">Todas</option>
+  </select>
+  <label>Grupo:</label>
+  <select id="filtro-grupo" onchange="aplicarFiltros()">
+    <option value="">Todos</option>
   </select>
 </div>
 
@@ -363,7 +374,10 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
       </div>
     </div>
     <div class="card">
-      <h3>📋 Detalle Tickets Antiguos</h3>
+      <div class="card-header-flex">
+        <h3>📋 Detalle Tickets Antiguos</h3>
+        <button class="btn-export" onclick="exportarDetalleCSV()">⬇️ Exportar CSV</button>
+      </div>
       <table>
         <thead><tr><th>ID</th><th>Grupo</th><th>Técnico</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
         <tbody id="tabla-antiguedad"></tbody>
@@ -409,6 +423,13 @@ DATA.tecnologias.forEach(t => {{
   document.getElementById('filtro-tec').appendChild(opt);
 }});
 
+// Poblar filtro grupos
+DATA.grupos.forEach(g => {{
+  const opt = document.createElement('option');
+  opt.value = g; opt.text = g;
+  document.getElementById('filtro-grupo').appendChild(opt);
+}});
+
 function showTab(tab, el) {{
   tabActual = tab;
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -423,7 +444,8 @@ function aplicarFiltros() {{ renderTab(tabActual); }}
 function getFiltros() {{
   return {{
     regional: document.getElementById('filtro-regional').value,
-    tec: document.getElementById('filtro-tec').value
+    tec: document.getElementById('filtro-tec').value,
+    grupo: document.getElementById('filtro-grupo').value
   }};
 }}
 
@@ -661,6 +683,7 @@ function renderAntiguedad() {{
   let detalle_completo = [...detalle];
   if (f.regional) detalle_completo = detalle_completo.filter(r => r.Regional === f.regional);
   if (f.tec) detalle_completo = detalle_completo.filter(r => r.Tecnologia === f.tec);
+  if (f.grupo) detalle_completo = detalle_completo.filter(r => r.grupo_limpio === f.grupo);
 
   if (f.regional) {{
     antTec = []; // recalcular desde detalle
@@ -690,6 +713,26 @@ function renderAntiguedad() {{
       antReg.push({{Regional:rg, rango:ra, total:v}});
     }});
     antTec = antTec.filter(r => r.Tecnologia === f.tec);
+  }}
+  if (f.grupo) {{
+    antTec = [];
+    antReg = [];
+    detalle = detalle.filter(r => r.grupo_limpio === f.grupo);
+    const mapT = {{}}, mapR = {{}};
+    detalle.forEach(r => {{
+      const kt = r.Tecnologia + '|' + r.rango;
+      mapT[kt] = (mapT[kt]||0) + 1;
+      const kr = r.Regional + '|' + r.rango;
+      mapR[kr] = (mapR[kr]||0) + 1;
+    }});
+    Object.entries(mapT).forEach(([k,v]) => {{
+      const [t,rg] = k.split('|');
+      antTec.push({{Tecnologia:t, rango:rg, total:v}});
+    }});
+    Object.entries(mapR).forEach(([k,v]) => {{
+      const [rg2,ra] = k.split('|');
+      antReg.push({{Regional:rg2, rango:ra, total:v}});
+    }});
   }}
 
   // Contadores — usar todos los datos filtrados por regional y tec
@@ -747,6 +790,33 @@ function renderAntiguedad() {{
       <td><span class="badge badge-${{color}}">${{r.rango}}</span></td>
     </tr>`;
   }});
+}}
+
+// ── EXPORTAR CSV ──
+function exportarDetalleCSV() {{
+  const f = getFiltros();
+  let rows = DATA.detalle_ant;
+  if (f.regional) rows = rows.filter(r => r.Regional === f.regional);
+  if (f.tec) rows = rows.filter(r => r.Tecnologia === f.tec);
+  if (f.grupo) rows = rows.filter(r => r.grupo_limpio === f.grupo);
+
+  const headers = ['ID','Grupo','Tecnico','Regional','Tecnologia','Dias','Rango'];
+  const csvRows = [headers.join(',')];
+  rows.sort((a,b) => b.dias_abierto - a.dias_abierto).forEach(r => {{
+    const vals = [r.ID, r.grupo_limpio, r.Tecnico, r.Regional, r.Tecnologia, r.dias_abierto, r.rango];
+    csvRows.push(vals.map(v => `"${{String(v ?? '').replace(/"/g,'""')}}"`).join(','));
+  }});
+
+  const csvContent = '﻿' + csvRows.join('\\r\\n');
+  const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `detalle_antiguedad_${{new Date().toISOString().slice(0,10)}}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }}
 
 // Render inicial
