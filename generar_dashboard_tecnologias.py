@@ -156,7 +156,7 @@ def preparar_datos(df):
     ant_reg = df_ant.groupby(['Regional', 'rango']).size().reset_index(name='total')
 
     # Detalle tickets antiguos
-    cols_detalle = ['ID', 'Título', col_tecnico, 'Regional', 'Tecnologia', 'dias_abierto', 'rango', 'Estados']
+    cols_detalle = ['ID', 'grupo_limpio', col_tecnico, 'Regional', 'Tecnologia', 'dias_abierto', 'rango', 'Estados']
     cols_detalle = [c for c in cols_detalle if c in df_ant.columns]
     detalle_ant = df_ant[cols_detalle].copy()
     detalle_ant['ID'] = detalle_ant['ID'].astype(str).str.strip()
@@ -365,7 +365,7 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
     <div class="card">
       <h3>📋 Detalle Tickets Antiguos</h3>
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Técnico</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
+        <thead><tr><th>ID</th><th>Grupo</th><th>Técnico</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
         <tbody id="tabla-antiguedad"></tbody>
       </table>
     </div>
@@ -739,7 +739,7 @@ function renderAntiguedad() {{
     const color = r.rango === '+10 dias' ? 'red' : r.rango === '5-10 dias' ? 'orange' : 'yellow';
     tbody.innerHTML += `<tr>
       <td><b>#${{r.ID}}</b></td>
-      <td>${{(r.Título||'').substring(0,50)}}</td>
+      <td>${{(r.grupo_limpio||'').substring(0,50)}}</td>
       <td>${{r.Tecnico||'Sin asignar'}}</td>
       <td><span class="badge badge-blue">${{r.Regional}}</span></td>
       <td>${{r.Tecnologia}}</td>
