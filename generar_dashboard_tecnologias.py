@@ -673,16 +673,21 @@ function renderSemana() {{
   const datasets = tecs.map((t, i) => ({{
     label: t,
     data: fechas.map(fc => DATA.semana_tec.find(r => r.fecha === fc && r.Tecnologia === t)?.total || 0),
-    backgroundColor: COLORES[i % COLORES.length]
+    borderColor: COLORES[i % COLORES.length],
+    backgroundColor: COLORES[i % COLORES.length],
+    tension: 0.4,
+    fill: false,
+    pointRadius: 4,
+    pointBackgroundColor: COLORES[i % COLORES.length]
   }}));
 
   destroyChart('semana');
   charts['semana'] = new Chart(document.getElementById('chart-semana'), {{
-    type: 'bar',
+    type: 'line',
     data: {{ labels: fechas, datasets: datasets }},
     options: {{
       plugins: {{ legend: {{ position: 'bottom', labels: {{ font: {{ size: 11 }} }} }} }},
-      scales: {{ x: {{ stacked: true }}, y: {{ stacked: true, beginAtZero: true }} }}
+      scales: {{ y: {{ beginAtZero: true }} }}
     }}
   }});
 
