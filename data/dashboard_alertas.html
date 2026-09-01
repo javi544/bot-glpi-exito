@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Alertas GLPI</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+  header { background: linear-gradient(135deg, #1F3864, #2E75B6); color: white; padding: 20px 32px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 22px; }
+  header span { font-size: 13px; opacity: 0.85; }
+  .tabs { display: flex; background: #1F3864; padding: 0 32px; }
+  .tab { padding: 12px 24px; color: rgba(255,255,255,0.7); cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; transition: all 0.2s; }
+  .tab.active { color: white; border-bottom-color: #FFD700; }
+  .tab:hover { color: white; }
+  .filters { background: white; padding: 14px 32px; display: flex; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #e0e0e0; }
+  .filters select, .filters input { padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .filters button { padding: 7px 18px; background: #2E75B6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .filters button:hover { background: #1F3864; }
+  .content { padding: 24px 32px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .stats { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-card { background: white; border-radius: 10px; padding: 16px 24px; flex: 1; min-width: 150px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); border-left: 4px solid #2E75B6; }
+  .stat-card.red { border-left-color: #e53935; }
+  .stat-card.yellow { border-left-color: #f9a825; }
+  .stat-card.green { border-left-color: #43a047; }
+  .stat-card h3 { font-size: 28px; font-weight: 700; }
+  .stat-card p { font-size: 12px; color: #666; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.07); font-size: 13px; }
+  th { background: #1F3864; color: white; padding: 12px 14px; text-align: left; font-weight: 600; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #f5f8ff; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-red { background: #fde8e8; color: #c62828; }
+  .badge-yellow { background: #fff8e1; color: #f57f17; }
+  .badge-blue { background: #e3f0fb; color: #1565c0; }
+  .badge-green { background: #e8f5e9; color: #2e7d32; }
+  .no-data { text-align: center; padding: 48px; color: #999; font-size: 15px; }
+  footer { text-align: center; padding: 20px; color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🤖 Dashboard Alertas GLPI</h1>
+    <div>IT en Sitio — Grupo Éxito</div>
+  </div>
+  <span>Actualizado: 01/09/2026 08:44</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('vencen')">🚨 Vencen en 48h</div>
+  <div class="tab" onclick="showTab('sin_update')">⏰ Sin actualizar +5d</div>
+  <div class="tab" onclick="showTab('antiguos')">📅 Más antiguos</div>
+</div>
+
+<div class="filters">
+  <select id="filtro-regional" onchange="aplicarFiltros()">
+    <option value="">Todas las regionales</option>
+    <option>CALI</option><option>MEDELLIN</option><option>COSTA</option><option>BOGOTA</option>
+  </select>
+  <input id="filtro-texto" type="text" placeholder="Buscar técnico, grupo o ID..." oninput="aplicarFiltros()" style="width:260px">
+  <button onclick="limpiarFiltros()">✕ Limpiar</button>
+  <button onclick="exportarCSV()">⬇️ Exportar CSV</button>
+</div>
+
+<div class="content">
+
+  <!-- PANEL VENCEN -->
+  <div class="panel active" id="panel-vencen">
+    <div class="stats">
+      <div class="stat-card red"><h3 id="cnt-vencen">0</h3><p>Vencen en 48h</p></div>
+      <div class="stat-card red"><h3 id="cnt-vencen-cali">0</h3><p>Cali</p></div>
+      <div class="stat-card red"><h3 id="cnt-vencen-med">0</h3><p>Medellín</p></div>
+      <div class="stat-card red"><h3 id="cnt-vencen-cos">0</h3><p>Costa</p></div>
+      <div class="stat-card red"><h3 id="cnt-vencen-bog">0</h3><p>Bogotá</p></div>
+    </div>
+    <table id="tabla-vencen">
+      <thead><tr><th>Regional</th><th>ID</th><th>Título</th><th>Técnico</th><th>Grupo</th><th>Vence</th><th>SLA %</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- PANEL SIN ACTUALIZAR -->
+  <div class="panel" id="panel-sin_update">
+    <div class="stats">
+      <div class="stat-card yellow"><h3 id="cnt-sinupd">0</h3><p>Sin actualizar +5d</p></div>
+      <div class="stat-card yellow"><h3 id="cnt-sinupd-cali">0</h3><p>Cali</p></div>
+      <div class="stat-card yellow"><h3 id="cnt-sinupd-med">0</h3><p>Medellín</p></div>
+      <div class="stat-card yellow"><h3 id="cnt-sinupd-cos">0</h3><p>Costa</p></div>
+      <div class="stat-card yellow"><h3 id="cnt-sinupd-bog">0</h3><p>Bogotá</p></div>
+    </div>
+    <table id="tabla-sin_update">
+      <thead><tr><th>Regional</th><th>ID</th><th>Título</th><th>Técnico</th><th>Grupo</th><th>Días sin mover</th><th>Última mod.</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- PANEL ANTIGUOS -->
+  <div class="panel" id="panel-antiguos">
+    <div class="stats">
+      <div class="stat-card blue"><h3 id="cnt-ant">0</h3><p>Tickets más antiguos</p></div>
+      <div class="stat-card blue"><h3 id="cnt-ant-cali">0</h3><p>Cali</p></div>
+      <div class="stat-card blue"><h3 id="cnt-ant-med">0</h3><p>Medellín</p></div>
+      <div class="stat-card blue"><h3 id="cnt-ant-cos">0</h3><p>Costa</p></div>
+      <div class="stat-card blue"><h3 id="cnt-ant-bog">0</h3><p>Bogotá</p></div>
+    </div>
+    <table id="tabla-antiguos">
+      <thead><tr><th>Regional</th><th>ID</th><th>Título</th><th>Técnico</th><th>Grupo</th><th>Días abierto</th><th>Apertura</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer>🤖 Bot desarrollado por el Ing. Javier Trujillo &nbsp;|&nbsp; Generado: 01/09/2026 08:44</footer>
+
+<script>
+const DATA = {
+  vencen:     [{"regional": "CALI", "id": "576762", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jenny Marcela Cortes Pacheco ", "grupo": "TGCS-COTIZACIONES", "vence": "02/09/2026 07:38", "sla": "77.0%"}, {"regional": "CALI", "id": "579908", "titulo": "Nuevo Incidente Falla con batrerias de radiofercuencia", "tecnico": "Cristian David Tamayo Rodriguez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 16:52", "sla": "58.0%"}, {"regional": "CALI", "id": "578400", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS-TRANSPORTE", "vence": "01/09/2026 11:54", "sla": "93.0%"}, {"regional": "CALI", "id": "578186", "titulo": "Nuevo Incidente BALANZA CON DAÑO EN TECLADO", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS-TRANSPORTE", "vence": "01/09/2026 09:33", "sla": "98.0%"}, {"regional": "CALI", "id": "578389", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS-TRANSPORTE", "vence": "01/09/2026 11:40", "sla": "94.0%"}, {"regional": "CALI", "id": "579894", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 16:42", "sla": "58.0%"}, {"regional": "CALI", "id": "579542", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS-TRANSPORTE", "vence": "02/09/2026 12:54", "sla": "66.0%"}, {"regional": "CALI", "id": "579532", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 12:46", "sla": "67.0%"}, {"regional": "CALI", "id": "581448", "titulo": "Nuevo Incidente Falla reloj biométrico", "tecnico": "Julian Robles Perlaza ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 14:23", "sla": "64.0%"}, {"regional": "CALI", "id": "581205", "titulo": "Nuevo Incidente Novedad Escaner de mano No lee", "tecnico": "Julian Robles Perlaza ", "grupo": "TGCS - Tecnologia POS", "vence": "01/09/2026 11:32", "sla": "82.0%"}, {"regional": "CALI", "id": "579834", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jose Didier Escudero Velasquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 15:57", "sla": "60.0%"}, {"regional": "CALI", "id": "579280", "titulo": "Nueva Solicitud: Manos Remotas", "tecnico": "Jose Didier Escudero Velasquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 09:50", "sla": "73.0%"}, {"regional": "CALI", "id": "578756", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jose Didier Escudero Velasquez ", "grupo": "TGCS - Tecnologia POS", "vence": "01/09/2026 16:42", "sla": "83.0%"}, {"regional": "MEDELLIN", "id": "582355", "titulo": "Nuevo Incidente Equipo con problemas de bateria", "tecnico": "Brahian Florez Osorno ", "grupo": "TGCS - ClicCafe Medellin", "vence": "02/09/2026 12:16", "sla": "3.0%"}, {"regional": "MEDELLIN", "id": "579564", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 13:00", "sla": "66.0%"}, {"regional": "MEDELLIN", "id": "581436", "titulo": "Nuevo Incidente Novedad Imp Marcacion Portatil Calidad Baja ", "tecnico": "Julian Camilo Martinez Agudelo ", "grupo": "TGCS - Tecnologia POS", "vence": "01/09/2026 14:18", "sla": "65.0%"}, {"regional": "MEDELLIN", "id": "579762", "titulo": "Nuevo Incidente Novedad Balanza No actualiza precios/informa", "tecnico": "", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 15:13", "sla": "61.0%"}, {"regional": "MEDELLIN", "id": "579212", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 14:37", "sla": "50.0%"}, {"regional": "MEDELLIN", "id": "579218", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Nicolay Daniel Cruz Sarmiento ", "grupo": "TGCS-TRANSPORTE", "vence": "02/09/2026 14:40", "sla": "50.0%"}, {"regional": "MEDELLIN", "id": "579274", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 15:07", "sla": "49.0%"}, {"regional": "MEDELLIN", "id": "579294", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Nicolay Daniel Cruz Sarmiento ", "grupo": "TGCS-TRANSPORTE", "vence": "02/09/2026 15:09", "sla": "49.0%"}, {"regional": "MEDELLIN", "id": "579298", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 15:08", "sla": "49.0%"}, {"regional": "MEDELLIN", "id": "579308", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-PARTES", "vence": "02/09/2026 15:10", "sla": "49.0%"}, {"regional": "MEDELLIN", "id": "579258", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Nicolay Daniel Cruz Sarmiento ", "grupo": "TGCS-TRANSPORTE", "vence": "02/09/2026 14:49", "sla": "50.0%"}, {"regional": "MEDELLIN", "id": "579232", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 14:15", "sla": "51.0%"}, {"regional": "MEDELLIN", "id": "579438", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jorge Eliecer Guerrero Alvarez ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 11:38", "sla": "92.0%"}, {"regional": "MEDELLIN", "id": "581264", "titulo": "Nuevo Incidente Novedad Puesto de pago Pantalla tactil", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia POS", "vence": "01/09/2026 12:24", "sla": "77.0%"}, {"regional": "MEDELLIN", "id": "580819", "titulo": "Manos remotas", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 14:30", "sla": "42.0%"}, {"regional": "MEDELLIN", "id": "579670", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Julian Camilo Martinez Agudelo ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 14:18", "sla": "63.0%"}, {"regional": "MEDELLIN", "id": "579304", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Juan David Garcia Mestra ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 10:02", "sla": "72.0%"}, {"regional": "MEDELLIN", "id": "578761", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 16:45", "sla": "83.0%"}, {"regional": "MEDELLIN", "id": "578767", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 16:49", "sla": "83.0%"}, {"regional": "COSTA", "id": "579584", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Raul Del Carmen Moreno Herrera ", "grupo": "TGCS - Tecnologia POS", "vence": "02/09/2026 13:13", "sla": "66.0%"}, {"regional": "COSTA", "id": "581019", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Brandon Alberto Montano Guillen ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 06:00", "sla": "41.0%"}, {"regional": "BOGOTA", "id": "558564", "titulo": "Manos Remotas", "tecnico": "Gustavo Riano ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 09:50", "sla": "99.0%"}, {"regional": "BOGOTA", "id": "579918", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 17:09", "sla": "57.0%"}, {"regional": "BOGOTA", "id": "579968", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 06:00", "sla": "56.0%"}, {"regional": "BOGOTA", "id": "580020", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia POS", "vence": "03/09/2026 06:00", "sla": "56.0%"}, {"regional": "BOGOTA", "id": "581541", "titulo": "Nuevo Incidente Novedad Computador Bloqueo de aplicaciones", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 15:28", "sla": "58.0%"}, {"regional": "BOGOTA", "id": "578426", "titulo": "Novedad con equipo de cómputo por pantalla con resolución de", "tecnico": "Herman Varela Reyes ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 12:10", "sla": "93.0%"}, {"regional": "BOGOTA", "id": "580905", "titulo": "Nuevo Incidente Escaner pos no funciona", "tecnico": "Jorge Fajardo ", "grupo": "TGCS - Tecnologia POS", "vence": "03/09/2026 06:00", "sla": "41.0%"}, {"regional": "BOGOTA", "id": "578542", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jorge Fajardo ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 13:40", "sla": "90.0%"}, {"regional": "BOGOTA", "id": "581889", "titulo": "Nuevo Incidente Balanza con precinto roto", "tecnico": "Jorge Fajardo ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 07:32", "sla": "32.0%"}, {"regional": "BOGOTA", "id": "581894", "titulo": "Nuevo Incidente Balanza precinto con datos incorrectos", "tecnico": "Jorge Fajardo ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 07:34", "sla": "32.0%"}, {"regional": "BOGOTA", "id": "578696", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Erik Gamaliel Diazgranados Veira ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 15:37", "sla": "86.0%"}, {"regional": "BOGOTA", "id": "582180", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jesus Eduardo Torrecilla Tellez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 10:00", "sla": "17.0%"}, {"regional": "BOGOTA", "id": "579448", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jenny Marcela Cortes Pacheco ", "grupo": "TGCS-COTIZACIONES", "vence": "02/09/2026 11:41", "sla": "69.0%"}, {"regional": "BOGOTA", "id": "581642", "titulo": "Nuevo Incidente Novedad Computador Lentitud en el sistema", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 16:49", "sla": "49.0%"}, {"regional": "BOGOTA", "id": "581772", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Andres Erazo Garcia ", "grupo": "TGCS - Tecnologia POS", "vence": "02/09/2026 06:16", "sla": "40.0%"}, {"regional": "BOGOTA", "id": "578233", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "01/09/2026 10:01", "sla": "97.0%"}, {"regional": "BOGOTA", "id": "579096", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-PARTES", "vence": "02/09/2026 08:32", "sla": "75.0%"}, {"regional": "BOGOTA", "id": "581492", "titulo": "Nuevo Incidente POS bloqueado", "tecnico": "Miguel Angel Rico Velasquez ", "grupo": "TGCS - Tecnologia POS", "vence": "01/09/2026 14:49", "sla": "62.0%"}, {"regional": "BOGOTA", "id": "581257", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Andrea Ovalle Sandoval ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 08:20", "sla": "34.0%"}, {"regional": "BOGOTA", "id": "581420", "titulo": "Nuevo Incidente impresora portatil de préstamo no configurad", "tecnico": "Erik Gamaliel Diazgranados Veira ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 14:06", "sla": "66.0%"}, {"regional": "BOGOTA", "id": "580022", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Andres Erazo Garcia ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 06:00", "sla": "56.0%"}, {"regional": "BOGOTA", "id": "580026", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Andres Erazo Garcia ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 06:00", "sla": "56.0%"}, {"regional": "BOGOTA", "id": "580028", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Andres Erazo Garcia ", "grupo": "TGCS - Tecnologia No POS", "vence": "03/09/2026 06:00", "sla": "56.0%"}, {"regional": "BOGOTA", "id": "579090", "titulo": "Nuevo Incidente Novedad con equipo de cómputo no termina de ", "tecnico": "Jesus Eduardo Torrecilla Tellez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 08:29", "sla": "75.0%"}, {"regional": "BOGOTA", "id": "579170", "titulo": "Nuevo Incidente Novedad con bateria de equipo portátil", "tecnico": "Jesus Eduardo Torrecilla Tellez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 09:04", "sla": "74.0%"}, {"regional": "BOGOTA", "id": "578737", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Sergio Andres Mora Gomez ", "grupo": "TGCS - Tecnologia No POS", "vence": "01/09/2026 16:32", "sla": "84.0%"}, {"regional": "BOGOTA", "id": "575089", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "vence": "01/09/2026 16:10", "sla": "84.0%"}, {"regional": "BOGOTA", "id": "580196", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Bayron Smith Trujillo Rodriguez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 08:48", "sla": "66.0%"}, {"regional": "BOGOTA", "id": "580060", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Bayron Smith Trujillo Rodriguez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 06:36", "sla": "73.0%"}, {"regional": "BOGOTA", "id": "580056", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Bayron Smith Trujillo Rodriguez ", "grupo": "TGCS - Tecnologia No POS", "vence": "02/09/2026 06:32", "sla": "73.0%"}, {"regional": "BOGOTA", "id": "579890", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Herman Varela Reyes ", "grupo": "TGCS - Tecnologia POS", "vence": "02/09/2026 16:41", "sla": "58.0%"}],
+  sin_update: [{"regional": "COSTA", "id": "570012", "titulo": "Manos Remotas", "tecnico": "", "grupo": "TGCS - IMAC No POS", "dias": 13, "ultima_mod": "19/08/2026"}, {"regional": "MEDELLIN", "id": "571108", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 10, "ultima_mod": "21/08/2026"}, {"regional": "COSTA", "id": "560898", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 10, "ultima_mod": "21/08/2026"}, {"regional": "MEDELLIN", "id": "553560", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 10, "ultima_mod": "21/08/2026"}, {"regional": "BOGOTA", "id": "571316", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 10, "ultima_mod": "21/08/2026"}, {"regional": "CALI", "id": "556757", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 8, "ultima_mod": "24/08/2026"}, {"regional": "CALI", "id": "556804", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 8, "ultima_mod": "24/08/2026"}, {"regional": "BOGOTA", "id": "572046", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Sergio Andres Mora Gomez ", "grupo": "TGCS - Tecnologia No POS", "dias": 8, "ultima_mod": "24/08/2026"}, {"regional": "CALI", "id": "556759", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 8, "ultima_mod": "24/08/2026"}, {"regional": "COSTA", "id": "575814", "titulo": "Manos Remotas", "tecnico": "Daniel Acevedo Hernandez ", "grupo": "TGCS - IMAC No POS", "dias": 7, "ultima_mod": "24/08/2026"}, {"regional": "MEDELLIN", "id": "555593", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 7, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "573968", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Alvaro Malaver ", "grupo": "TGCS - Tecnologia POS", "dias": 7, "ultima_mod": "24/08/2026"}, {"regional": "BOGOTA", "id": "568743", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Andrea Ovalle Sandoval ", "grupo": "TGCS - Tecnologia POS", "dias": 7, "ultima_mod": "25/08/2026"}, {"regional": "CALI", "id": "558770", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-PARTES", "dias": 7, "ultima_mod": "24/08/2026"}, {"regional": "BOGOTA", "id": "574370", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 7, "ultima_mod": "24/08/2026"}, {"regional": "MEDELLIN", "id": "560544", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "CALI", "id": "564144", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "CALI", "id": "576205", "titulo": "Manos Remotas", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "567098", "titulo": "Manos Remotas", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "CALI", "id": "564127", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "CALI", "id": "564134", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "563331", "titulo": "Nuevo Incidente Novedad Imp Marcacion Portatil Calidad Baja ", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "550297", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "560166", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "575755", "titulo": "Manos Remotas", "tecnico": "Alvaro Malaver ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "COSTA", "id": "553467", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "566469", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "571784", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Alonso Aguirre Grajales ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "566454", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "564460", "titulo": "Nuevo Incidente Falla pc error de pantalla negra", "tecnico": "Jorge Eliecer Guerrero Alvarez ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "MEDELLIN", "id": "561295", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "CALI", "id": "575703", "titulo": "Manos Remotas", "tecnico": "Jose Didier Escudero Velasquez ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "COSTA", "id": "569039", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "COSTA", "id": "549579", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "COSTA", "id": "563413", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "553387", "titulo": "Nuevo Incidente Novedad radio frecuencia sin escaner, no esc", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "MEDELLIN", "id": "568004", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "569376", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-Laboratorio Bogota", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "BOGOTA", "id": "565492", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "559116", "titulo": "Nuevo Incidente Verificadores de precio no permiten formateo", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "565775", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-Laboratorio Bogota", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "559092", "titulo": "Nuevo Incidente Verificadores de precio no permiten formateo", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 6, "ultima_mod": "25/08/2026"}, {"regional": "BOGOTA", "id": "570362", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Herman Varela Reyes ", "grupo": "TGCS - Tecnologia POS", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "BOGOTA", "id": "569421", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Miguel Angel Rico Velasquez ", "grupo": "TGCS - Tecnologia POS", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "BOGOTA", "id": "575523", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Sergio Andres Mora Gomez ", "grupo": "TGCS - Tecnologia No POS", "dias": 6, "ultima_mod": "26/08/2026"}, {"regional": "MEDELLIN", "id": "572936", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-Laboratorio Medellin", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "MEDELLIN", "id": "543862", "titulo": "Manos Remotas", "tecnico": "Juan David Garcia Mestra ", "grupo": "TGCS - Tecnologia No POS", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "MEDELLIN", "id": "570112", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "CALI", "id": "577081", "titulo": "Manos Remotas", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "CALI", "id": "564149", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "BOGOTA", "id": "576882", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Bayron Smith Trujillo Rodriguez ", "grupo": "TGCS - Tecnologia No POS", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "COSTA", "id": "563265", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 5, "ultima_mod": "26/08/2026"}, {"regional": "BOGOTA", "id": "570484", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Miguel Angel Rico Velasquez ", "grupo": "TGCS - Tecnologia POS", "dias": 5, "ultima_mod": "26/08/2026"}],
+  antiguos:   [{"regional": "BOGOTA", "id": "531833", "titulo": "Manos Remotas", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "dias": 59, "apertura": "03/07/2026"}, {"regional": "MEDELLIN", "id": "533157", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jorge Eliecer Guerrero Alvarez ", "grupo": "TGCS - Tecnologia No POS", "dias": 57, "apertura": "06/07/2026"}, {"regional": "BOGOTA", "id": "536433", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Natalia Lorena Fino Vásquez ", "grupo": "TGCS - Tecnologia No POS", "dias": 54, "apertura": "08/07/2026"}, {"regional": "BOGOTA", "id": "538893", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Erik Gamaliel Diazgranados Veira ", "grupo": "TGCS - Tecnologia No POS", "dias": 52, "apertura": "10/07/2026"}, {"regional": "MEDELLIN", "id": "539795", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Julian Camilo Martinez Agudelo ", "grupo": "TGCS - Tecnologia No POS", "dias": 50, "apertura": "13/07/2026"}, {"regional": "MEDELLIN", "id": "540019", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edison Cardona ", "grupo": "TGCS - Tecnologia No POS", "dias": 49, "apertura": "13/07/2026"}, {"regional": "MEDELLIN", "id": "542531", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-TRANSPORTE", "dias": 46, "apertura": "16/07/2026"}, {"regional": "COSTA", "id": "543568", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Pedro Portillo ", "grupo": "TGCS - Tecnologia No POS", "dias": 45, "apertura": "17/07/2026"}, {"regional": "MEDELLIN", "id": "543862", "titulo": "Manos Remotas", "tecnico": "Juan David Garcia Mestra ", "grupo": "TGCS - Tecnologia No POS", "dias": 45, "apertura": "17/07/2026"}, {"regional": "COSTA", "id": "544338", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Pedro Portillo ", "grupo": "TGCS - Tecnologia No POS", "dias": 44, "apertura": "18/07/2026"}, {"regional": "CALI", "id": "545482", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-Laboratorio Bogota", "dias": 42, "apertura": "20/07/2026"}, {"regional": "MEDELLIN", "id": "545686", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-TRANSPORTE", "dias": 42, "apertura": "21/07/2026"}, {"regional": "MEDELLIN", "id": "545694", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-TRANSPORTE", "dias": 42, "apertura": "21/07/2026"}, {"regional": "MEDELLIN", "id": "546454", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 41, "apertura": "21/07/2026"}, {"regional": "COSTA", "id": "548448", "titulo": "Nuevo Incidente Falla fisica impresora Zebra", "tecnico": "Nicolay Daniel Cruz Sarmiento ", "grupo": "TGCS-TRANSPORTE", "dias": 39, "apertura": "23/07/2026"}, {"regional": "MEDELLIN", "id": "549357", "titulo": "Manos Remotas", "tecnico": "Jorge Eliecer Guerrero Alvarez ", "grupo": "TGCS - Tecnologia No POS", "dias": 38, "apertura": "24/07/2026"}, {"regional": "COSTA", "id": "549579", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 38, "apertura": "24/07/2026"}, {"regional": "BOGOTA", "id": "550297", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 37, "apertura": "25/07/2026"}, {"regional": "COSTA", "id": "551164", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-Laboratorio Bogota", "dias": 35, "apertura": "27/07/2026"}, {"regional": "CALI", "id": "552096", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-PARTES", "dias": 35, "apertura": "28/07/2026"}, {"regional": "BOGOTA", "id": "551926", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Jorge Fajardo ", "grupo": "TGCS - Tecnologia No POS", "dias": 35, "apertura": "27/07/2026"}, {"regional": "MEDELLIN", "id": "551148", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Brandon Alberto Montano Guillen ", "grupo": "TGCS-TRANSPORTE", "dias": 35, "apertura": "27/07/2026"}, {"regional": "MEDELLIN", "id": "552636", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 34, "apertura": "28/07/2026"}, {"regional": "CALI", "id": "552867", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 34, "apertura": "28/07/2026"}, {"regional": "BOGOTA", "id": "552539", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Nicolay Daniel Cruz Sarmiento ", "grupo": "TGCS-TRANSPORTE", "dias": 34, "apertura": "28/07/2026"}, {"regional": "COSTA", "id": "552627", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "", "grupo": "TGCS-TRANSPORTE", "dias": 34, "apertura": "28/07/2026"}, {"regional": "CALI", "id": "553625", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Javier Alexander Trujillo Sanabria ", "grupo": "TGCS-TRANSPORTE", "dias": 33, "apertura": "29/07/2026"}, {"regional": "MEDELLIN", "id": "553560", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 33, "apertura": "29/07/2026"}, {"regional": "MEDELLIN", "id": "553942", "titulo": "Manos Remotas", "tecnico": "Jorge Eliecer Guerrero Alvarez ", "grupo": "TGCS - Tecnologia POS", "dias": 33, "apertura": "29/07/2026"}, {"regional": "MEDELLIN", "id": "553933", "titulo": "Manos Remotas", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 33, "apertura": "29/07/2026"}, {"regional": "MEDELLIN", "id": "553387", "titulo": "Nuevo Incidente Novedad radio frecuencia sin escaner, no esc", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 33, "apertura": "29/07/2026"}, {"regional": "COSTA", "id": "553467", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Lervys David Luna Perez ", "grupo": "TGCS-Laboratorio Medellin", "dias": 33, "apertura": "29/07/2026"}, {"regional": "MEDELLIN", "id": "554654", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Juan David Garcia Mestra ", "grupo": "TGCS - Tecnologia No POS", "dias": 32, "apertura": "30/07/2026"}, {"regional": "CALI", "id": "554458", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 32, "apertura": "30/07/2026"}, {"regional": "MEDELLIN", "id": "555593", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 31, "apertura": "31/07/2026"}, {"regional": "CALI", "id": "556188", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Edward Rodríguez Real ", "grupo": "TGCS - Tecnologia No POS", "dias": 30, "apertura": "01/08/2026"}, {"regional": "CALI", "id": "556804", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 29, "apertura": "02/08/2026"}, {"regional": "CALI", "id": "556790", "titulo": "Nuevo Incidente Escaner de mano no lee productos.", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 29, "apertura": "02/08/2026"}, {"regional": "CALI", "id": "556759", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 29, "apertura": "02/08/2026"}, {"regional": "CALI", "id": "556757", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 29, "apertura": "02/08/2026"}, {"regional": "CALI", "id": "556761", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 29, "apertura": "02/08/2026"}, {"regional": "COSTA", "id": "557304", "titulo": "Manos Remotas", "tecnico": "Raul Del Carmen Moreno Herrera ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "BOGOTA", "id": "558200", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "JOHN HARRY VELANDIA CELIS ", "grupo": "TGCS-PARTES", "dias": 28, "apertura": "03/08/2026"}, {"regional": "CALI", "id": "557322", "titulo": "Manos Remotas", "tecnico": "Richard Martin Carreño Mindineros ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557470", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Julian Camilo Martinez Agudelo ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557366", "titulo": "Manos Remotas", "tecnico": "Edison Cardona ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557280", "titulo": "Manos Remotas", "tecnico": "Luis Yobanny Martinez Zarate ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557272", "titulo": "Manos Remotas", "tecnico": "Luis Yobanny Martinez Zarate ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557274", "titulo": "Manos Remotas", "tecnico": "Juan Camilo Jimenez ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}, {"regional": "MEDELLIN", "id": "557544", "titulo": "Reportar Falla: Novedad en equipo/dispositivo tecnológico", "tecnico": "Juan David Garcia Mestra ", "grupo": "TGCS - Tecnologia No POS", "dias": 28, "apertura": "03/08/2026"}]
+};
+
+let tabActual = 'vencen';
+
+function showTab(tab) {
+  tabActual = tab;
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  event.target.classList.add('active');
+  aplicarFiltros();
+}
+
+function aplicarFiltros() {
+  const regional = document.getElementById('filtro-regional').value.toUpperCase();
+  const texto    = document.getElementById('filtro-texto').value.toLowerCase();
+  renderTabla(tabActual, regional, texto);
+}
+
+function limpiarFiltros() {
+  document.getElementById('filtro-regional').value = '';
+  document.getElementById('filtro-texto').value = '';
+  aplicarFiltros();
+}
+
+function filtrar(rows, regional, texto) {
+  return rows.filter(r => {
+    const matchReg = !regional || r.regional.toUpperCase() === regional;
+    const matchTxt = !texto || JSON.stringify(r).toLowerCase().includes(texto);
+    return matchReg && matchTxt;
+  });
+}
+
+function badgeRegional(r) {
+  const colores = {CALI:'blue', MEDELLIN:'green', COSTA:'yellow', BOGOTA:'red'};
+  const c = colores[r.toUpperCase()] || 'blue';
+  return `<span class="badge badge-${c}">${r}</span>`;
+}
+
+function renderTabla(tipo, regional, texto) {
+  const rows = filtrar(DATA[tipo], regional, texto);
+  const tbody = document.querySelector('#tabla-' + tipo + ' tbody');
+  tbody.innerHTML = '';
+
+  if (rows.length === 0) {
+    const cols = tipo === 'vencen' ? 7 : 7;
+    tbody.innerHTML = `<tr><td colspan="${cols}" class="no-data">✅ Sin registros con los filtros actuales</td></tr>`;
+    return;
+  }
+
+  rows.forEach(r => {
+    let fila = '<tr>';
+    fila += `<td>${badgeRegional(r.regional)}</td>`;
+    fila += `<td><b>#${r.id}</b></td>`;
+    fila += `<td>${r.titulo}</td>`;
+    fila += `<td>${r.tecnico}</td>`;
+    fila += `<td>${r.grupo}</td>`;
+    if (tipo === 'vencen') {
+      const slaNum = parseInt(r.sla) || 0;
+      const slaColor = slaNum >= 90 ? 'red' : slaNum >= 70 ? 'yellow' : 'green';
+      fila += `<td>⏰ ${r.vence}</td>`;
+      fila += `<td><span class="badge badge-${slaColor}">${r.sla}</span></td>`;
+    } else if (tipo === 'sin_update') {
+      const diasColor = r.dias >= 10 ? 'red' : r.dias >= 7 ? 'yellow' : 'blue';
+      fila += `<td><span class="badge badge-${diasColor}">${r.dias} días</span></td>`;
+      fila += `<td>${r.ultima_mod}</td>`;
+    } else {
+      const diasColor = r.dias >= 30 ? 'red' : r.dias >= 15 ? 'yellow' : 'blue';
+      fila += `<td><span class="badge badge-${diasColor}">${r.dias} días</span></td>`;
+      fila += `<td>${r.apertura}</td>`;
+    }
+    fila += '</tr>';
+    tbody.innerHTML += fila;
+  });
+
+  // Actualizar contadores
+  actualizarContadores(tipo);
+}
+
+function actualizarContadores(tipo) {
+  const prefijos = {vencen:'cnt-vencen', sin_update:'cnt-sinupd', antiguos:'cnt-ant'};
+  const pref = prefijos[tipo];
+  const todos = DATA[tipo];
+  document.getElementById(pref).textContent = todos.length;
+  ['CALI','MEDELLIN','COSTA','BOGOTA'].forEach((reg, i) => {
+    const sufijos = ['cali','med','cos','bog'];
+    const id = pref + '-' + sufijos[i];
+    const elem = document.getElementById(id);
+    if (elem) elem.textContent = todos.filter(r => r.regional.toUpperCase() === reg).length;
+  });
+}
+
+function exportarCSV() {
+  const rows = filtrar(DATA[tabActual],
+    document.getElementById('filtro-regional').value.toUpperCase(),
+    document.getElementById('filtro-texto').value.toLowerCase()
+  );
+  if (!rows.length) return alert('Sin datos para exportar');
+  const keys = Object.keys(rows[0]);
+  const csv  = [keys.join(','), ...rows.map(r => keys.map(k => `"${r[k]}"`).join(','))].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `alertas_${tabActual}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// Cargar datos iniciales
+renderTabla('vencen', '', '');
+actualizarContadores('vencen');
+actualizarContadores('sin_update');
+actualizarContadores('antiguos');
+</script>
+</body>
+</html>
