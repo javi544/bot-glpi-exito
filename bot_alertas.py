@@ -3,6 +3,7 @@ import re
 import time
 import glob
 import logging
+import subprocess
 import pyperclip
 import pandas as pd
 
@@ -89,6 +90,18 @@ def limpiar_cache_driver():
     if os.path.exists(cache):
         shutil.rmtree(cache, ignore_errors=True)
         logging.info("🗑️  Caché ChromeDriver limpiado")
+
+
+def matar_procesos_huerfanos():
+    """Cierra chrome.exe/chromedriver.exe que hayan quedado colgados de una corrida
+    anterior que crasheo antes de llegar a driver.quit(), para que no bloqueen el
+    perfil de WhatsApp en la siguiente corrida."""
+    for proceso in ("chromedriver.exe", "chrome.exe"):
+        subprocess.run(
+            ["taskkill", "/F", "/IM", proceso, "/T"],
+            capture_output=True, text=True
+        )
+    time.sleep(1)
 
 
 def iniciar_driver():
@@ -777,6 +790,42 @@ actualizarContadores('antiguos');
 
 
 # =========================
+# PUBLICAR DASHBOARD EN GITHUB
+# =========================
+def publicar_dashboard():
+    """Copia el dashboard al repositorio BOT-ALERTAS y hace push a GitHub Pages."""
+    import shutil
+    import subprocess
+
+    repo_dir     = "C:/BOT-ALERTAS"
+    origen       = CONFIG["dashboard_html"]
+    destino      = os.path.join(repo_dir, "index.html")
+
+    try:
+        if not os.path.exists(repo_dir):
+            logging.warning("⚠️  Carpeta C:/BOT-ALERTAS no encontrada — omitiendo publicacion")
+            return
+
+        # Copiar dashboard al repositorio
+        shutil.copy2(origen, destino)
+        logging.info(f"📋 Dashboard copiado a {destino}")
+
+        # Git add, commit y push
+        subprocess.run(["git", "-C", repo_dir, "add", "index.html"], check=True)
+        subprocess.run(["git", "-C", repo_dir, "commit", "-m",
+            f"Dashboard actualizado {datetime.now().strftime('%d/%m/%Y %H:%M')}"],
+            check=True)
+        subprocess.run(["git", "-C", repo_dir, "push"], check=True)
+        logging.info("✅ Dashboard publicado en GitHub Pages")
+        logging.info("🌐 URL: https://javi544.github.io/BOT-ALERTAS/")
+
+    except subprocess.CalledProcessError as e:
+        logging.warning(f"⚠️  Error publicando dashboard: {e}")
+    except Exception as e:
+        logging.warning(f"⚠️  Error copiando dashboard: {e}")
+
+
+# =========================
 # MAIN
 # =========================
 def main():
@@ -793,10 +842,13 @@ def main():
     print(f"📊 Dashboard: {CONFIG['dashboard_html']}")
     print("="*55 + "\n")
 
-    driver = iniciar_driver()
+    matar_procesos_huerfanos()
+
+    driver = None
     todos_los_datos = []
 
     try:
+        driver = iniciar_driver()
         login(driver)
 
         for r in REGIONALES:
@@ -820,8 +872,20 @@ def main():
                 logging.error(f"❌ Error en {r['nombre']}: {e}")
                 continue
 
-        # Generar dashboard consolidado
+        # Generar dashboard consolidado de alertas
         generar_dashboard(todos_los_datos)
+
+        # Publicar dashboard alertas en GitHub Pages
+        publicar_dashboard()
+
+        # Generar y publicar dashboard de tecnologías
+        try:
+            from generar_dashboard_tecnologias import main as generar_tec
+            logging.info("📊 Generando dashboard de tecnologías...")
+            generar_tec()
+            logging.info("✅ Dashboard tecnologías publicado")
+        except Exception as e:
+            logging.warning(f"⚠️  Error generando dashboard tecnologías: {e}")
 
         # Enviar resumen consolidado a Coordinación
         logging.info(f"\n📲 Enviando resumen a '{CONFIG['grupo_coordinacion']}'...")
@@ -855,7 +919,8 @@ def main():
         raise
     finally:
         logging.info("🔒 Cerrando navegador...")
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 if __name__ == "__main__":
