@@ -3,6 +3,7 @@ import re
 import time
 import glob
 import logging
+import subprocess
 import pyperclip
 import pandas as pd
 
@@ -89,6 +90,18 @@ def limpiar_cache_driver():
     if os.path.exists(cache):
         shutil.rmtree(cache, ignore_errors=True)
         logging.info("🗑️  Caché ChromeDriver limpiado")
+
+
+def matar_procesos_huerfanos():
+    """Cierra chrome.exe/chromedriver.exe que hayan quedado colgados de una corrida
+    anterior que crasheo antes de llegar a driver.quit(), para que no bloqueen el
+    perfil de WhatsApp en la siguiente corrida."""
+    for proceso in ("chromedriver.exe", "chrome.exe"):
+        subprocess.run(
+            ["taskkill", "/F", "/IM", proceso, "/T"],
+            capture_output=True, text=True
+        )
+    time.sleep(1)
 
 
 def iniciar_driver():
@@ -829,10 +842,13 @@ def main():
     print(f"📊 Dashboard: {CONFIG['dashboard_html']}")
     print("="*55 + "\n")
 
-    driver = iniciar_driver()
+    matar_procesos_huerfanos()
+
+    driver = None
     todos_los_datos = []
 
     try:
+        driver = iniciar_driver()
         login(driver)
 
         for r in REGIONALES:
@@ -903,7 +919,8 @@ def main():
         raise
     finally:
         logging.info("🔒 Cerrando navegador...")
-        driver.quit()
+        if driver is not None:
+            driver.quit()
 
 
 if __name__ == "__main__":
