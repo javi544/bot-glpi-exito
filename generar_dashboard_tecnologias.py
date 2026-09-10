@@ -111,7 +111,7 @@ def preparar_datos(df):
     if col_tecnico is None:
         col_tecnico = 'Asignado a - Técnico'
 
-    tecnicos_regional = df.groupby(['Regional', col_tecnico]).size().reset_index(name='tickets')
+    tecnicos_regional = df.groupby(['Regional', col_tecnico, 'grupo_limpio']).size().reset_index(name='tickets')
     tecnicos_regional = tecnicos_regional.rename(columns={col_tecnico: 'Tecnico'})
     tecnicos_regional = tecnicos_regional[tecnicos_regional['Tecnico'].notna()]
     tecnicos_regional = tecnicos_regional[tecnicos_regional['Tecnico'].str.strip() != '']
@@ -178,7 +178,7 @@ def preparar_datos(df):
     ant_reg = df_ant.groupby(['Regional', 'rango']).size().reset_index(name='total')
 
     # Detalle tickets antiguos
-    cols_detalle = ['ID', 'grupo_limpio', col_tecnico, 'Regional', 'Tecnologia', 'dias_abierto', 'rango', 'Estados']
+    cols_detalle = ['ID', col_tecnico, 'grupo_limpio', 'Regional', 'Tecnologia', 'dias_abierto', 'rango', 'Estados']
     cols_detalle = [c for c in cols_detalle if c in df_ant.columns]
     detalle_ant = df_ant[cols_detalle].copy()
     detalle_ant['ID'] = detalle_ant['ID'].astype(str).str.strip()
@@ -187,8 +187,6 @@ def preparar_datos(df):
     detalle_ant = detalle_ant.fillna('Sin asignar')
     # NO ordenar antes de tomar muestra — tomar todos y ordenar después
     detalle_ant = detalle_ant.sort_values('dias_abierto', ascending=False)
-
-    grupos_list = sorted(detalle_ant['grupo_limpio'].dropna().unique().tolist()) if 'grupo_limpio' in detalle_ant.columns else []
 
     # DIAGNÓSTICO
     print("=== DIAGNÓSTICO ANTIGÜEDAD ===")
@@ -209,7 +207,7 @@ def preparar_datos(df):
         "total_tickets":   len(df),
         "regionales":      REGIONALES,
         "tecnologias":     sorted(df['Tecnologia'].unique().tolist()),
-        "grupos":          grupos_list,
+        "grupos":          sorted(df['grupo_limpio'].dropna().unique().tolist()),
         "fecha":           ahora.strftime("%d/%m/%Y %H:%M"),
     }
 
@@ -240,6 +238,8 @@ header span {{ font-size:13px; opacity:.85; }}
 .tab:hover {{ color:white; }}
 .filters {{ background:white; padding:12px 32px; display:flex; gap:12px; flex-wrap:wrap; border-bottom:1px solid #e0e0e0; align-items:center; }}
 .filters select {{ padding:7px 12px; border:1px solid #ddd; border-radius:6px; font-size:13px; }}
+.filters button {{ padding:7px 18px; background:#FF0000; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; }}
+.filters button:hover {{ background:#B30000; }}
 .filters label {{ font-size:13px; color:#555; }}
 .content {{ padding:24px 32px; }}
 .panel {{ display:none; }}
@@ -271,10 +271,6 @@ tr:hover td {{ background:#f5f8ff; }}
 .bar-bg {{ background:#f0f0f0; border-radius:4px; height:12px; overflow:hidden; }}
 .bar-fill {{ height:100%; border-radius:4px; transition:width .5s; }}
 .no-data {{ text-align:center; padding:40px; color:#999; }}
-.card-header-flex {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #ffe5e5; padding-bottom:8px; }}
-.card-header-flex h3 {{ margin-bottom:0; border-bottom:none; padding-bottom:0; }}
-.btn-export {{ padding:7px 14px; background:#FF0000; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; }}
-.btn-export:hover {{ background:#B30000; }}
 @media(max-width:768px) {{ .grid-2,.grid-3 {{ grid-template-columns:1fr; }} .content {{ padding:16px; }} }}
 footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-top:1px solid #e0e0e0; margin-top:20px; }}
 </style>
@@ -312,6 +308,8 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
   <select id="filtro-grupo" onchange="aplicarFiltros()">
     <option value="">Todos</option>
   </select>
+  <button onclick="limpiarFiltros()">✕ Limpiar</button>
+  <button onclick="exportarCSV()">⬇️ Exportar CSV</button>
 </div>
 
 <div class="content">
@@ -377,7 +375,7 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
     <div class="card">
       <h3>👤 Avance de Técnicos por Regional</h3>
       <table>
-        <thead><tr><th>Regional</th><th>Técnico</th><th>Tickets asignados</th><th>Carga relativa</th></tr></thead>
+        <thead><tr><th>Regional</th><th>Técnico</th><th>Grupo</th><th>Tickets asignados</th><th>Carga relativa</th></tr></thead>
         <tbody id="tabla-tecnicos"></tbody>
       </table>
     </div>
@@ -401,12 +399,9 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
       </div>
     </div>
     <div class="card">
-      <div class="card-header-flex">
-        <h3>📋 Detalle Tickets Antiguos</h3>
-        <button class="btn-export" onclick="exportarDetalleCSV()">⬇️ Exportar CSV</button>
-      </div>
+      <h3>📋 Detalle Tickets Antiguos</h3>
       <table>
-        <thead><tr><th>ID</th><th>Grupo</th><th>Técnico</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
+        <thead><tr><th>ID</th><th>Técnico</th><th>Grupo</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
         <tbody id="tabla-antiguedad"></tbody>
       </table>
     </div>
@@ -458,6 +453,13 @@ DATA.grupos.forEach(g => {{
   document.getElementById('filtro-grupo').appendChild(opt);
 }});
 
+function limpiarFiltros() {{
+  document.getElementById('filtro-regional').value = '';
+  document.getElementById('filtro-tec').value = '';
+  document.getElementById('filtro-grupo').value = '';
+  aplicarFiltros();
+}}
+
 function showTab(tab, el) {{
   tabActual = tab;
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -480,9 +482,11 @@ function getFiltros() {{
 function filtrarDatos(rows, key_regional='Regional', key_tec='Tecnologia') {{
   const f = getFiltros();
   return rows.filter(r => {{
-    const matchReg = !f.regional || r[key_regional] === f.regional;
-    const matchTec = !f.tec || r[key_tec] === f.tec;
-    return matchReg && matchTec;
+    const matchReg   = !f.regional || r[key_regional] === f.regional;
+    const matchTec   = !f.tec || r[key_tec] === f.tec;
+    // Solo aplicar filtro grupo si la fila tiene esa columna
+    const matchGrupo = !f.grupo || r.grupo_limpio === undefined || r.grupo_limpio === f.grupo;
+    return matchReg && matchTec && matchGrupo;
   }});
 }}
 
@@ -639,6 +643,7 @@ function renderTecnicos() {{
   const f = getFiltros();
   let rows = DATA.tecnicos;
   if (f.regional) rows = rows.filter(r => r.Regional === f.regional);
+  if (f.grupo) rows = rows.filter(r => r.grupo_limpio === f.grupo);
 
   // Max por regional para barra relativa
   const maxPorReg = {{}};
@@ -651,10 +656,10 @@ function renderTecnicos() {{
   ordenado.forEach(r => {{
     const pct = maxPorReg[r.Regional] > 0 ? ((r.tickets/maxPorReg[r.Regional])*100).toFixed(0) : 0;
     const color = pct >= 80 ? '#e53935' : pct >= 50 ? '#fb8c00' : '#43a047';
-    const badge = r.Regional;
     tbody.innerHTML += `<tr>
       <td><span class="badge badge-blue">${{r.Regional}}</span></td>
       <td>${{r.Tecnico}}</td>
+      <td>${{r.grupo_limpio||'Sin grupo'}}</td>
       <td><b>${{r.tickets}}</b></td>
       <td style="width:200px">
         <div class="bar-label"><span>${{pct}}% de la carga máx.</span></div>
@@ -738,6 +743,9 @@ function renderAntiguedad() {{
     }});
     antReg = antReg.filter(r => r.Regional === f.regional);
   }}
+  if (f.grupo) {{
+    detalle = detalle.filter(r => r.grupo_limpio === f.grupo);
+  }}
   if (f.tec) {{
     antReg = [];
     detalle = detalle.filter(r => r.Tecnologia === f.tec);
@@ -751,26 +759,6 @@ function renderAntiguedad() {{
       antReg.push({{Regional:rg, rango:ra, total:v}});
     }});
     antTec = antTec.filter(r => r.Tecnologia === f.tec);
-  }}
-  if (f.grupo) {{
-    antTec = [];
-    antReg = [];
-    detalle = detalle.filter(r => r.grupo_limpio === f.grupo);
-    const mapT = {{}}, mapR = {{}};
-    detalle.forEach(r => {{
-      const kt = r.Tecnologia + '|' + r.rango;
-      mapT[kt] = (mapT[kt]||0) + 1;
-      const kr = r.Regional + '|' + r.rango;
-      mapR[kr] = (mapR[kr]||0) + 1;
-    }});
-    Object.entries(mapT).forEach(([k,v]) => {{
-      const [t,rg] = k.split('|');
-      antTec.push({{Tecnologia:t, rango:rg, total:v}});
-    }});
-    Object.entries(mapR).forEach(([k,v]) => {{
-      const [rg2,ra] = k.split('|');
-      antReg.push({{Regional:rg2, rango:ra, total:v}});
-    }});
   }}
 
   // Contadores — usar todos los datos filtrados por regional y tec
@@ -820,8 +808,8 @@ function renderAntiguedad() {{
     const color = r.rango === '+10 dias' ? 'red' : r.rango === '5-10 dias' ? 'orange' : 'yellow';
     tbody.innerHTML += `<tr>
       <td><b>#${{r.ID}}</b></td>
-      <td>${{(r.grupo_limpio||'').substring(0,50)}}</td>
       <td>${{r.Tecnico||'Sin asignar'}}</td>
+      <td>${{r.grupo_limpio||'Sin grupo'}}</td>
       <td><span class="badge badge-blue">${{r.Regional}}</span></td>
       <td>${{r.Tecnologia}}</td>
       <td><b>${{r.dias_abierto}}</b></td>
@@ -830,31 +818,39 @@ function renderAntiguedad() {{
   }});
 }}
 
-// ── EXPORTAR CSV ──
-function exportarDetalleCSV() {{
+function exportarCSV() {{
   const f = getFiltros();
-  let rows = DATA.detalle_ant;
-  if (f.regional) rows = rows.filter(r => r.Regional === f.regional);
-  if (f.tec) rows = rows.filter(r => r.Tecnologia === f.tec);
-  if (f.grupo) rows = rows.filter(r => r.grupo_limpio === f.grupo);
-
-  const headers = ['ID','Grupo','Tecnico','Regional','Tecnologia','Dias','Rango'];
-  const csvRows = [headers.join(',')];
-  rows.sort((a,b) => b.dias_abierto - a.dias_abierto).forEach(r => {{
-    const vals = [r.ID, r.grupo_limpio, r.Tecnico, r.Regional, r.Tecnologia, r.dias_abierto, r.rango];
-    csvRows.push(vals.map(v => `"${{String(v ?? '').replace(/"/g,'""')}}"`).join(','));
+  let rows = DATA.detalle_ant.filter(r => {{
+    const matchReg   = !f.regional || r.Regional === f.regional;
+    const matchTec   = !f.tec || r.Tecnologia === f.tec;
+    const matchGrupo = !f.grupo || r.grupo_limpio === f.grupo;
+    return matchReg && matchTec && matchGrupo;
   }});
 
-  const csvContent = '﻿' + csvRows.join('\\r\\n');
-  const blob = new Blob([csvContent], {{ type: 'text/csv;charset=utf-8;' }});
-  const url = URL.createObjectURL(blob);
+  // Si estamos en otra pestaña usar datos relevantes
+  if (tabActual === 'tecnicos') {{
+    rows = DATA.tecnicos.filter(r => {{
+      const matchReg   = !f.regional || r.Regional === f.regional;
+      const matchGrupo = !f.grupo || r.grupo_limpio === f.grupo;
+      return matchReg && matchGrupo;
+    }});
+  }} else if (tabActual === 'backlog') {{
+    rows = DATA.backlog_tec_reg.filter(r => {{
+      const matchReg = !f.regional || r.Regional === f.regional;
+      const matchTec = !f.tec || r.Tecnologia === f.tec;
+      return matchReg && matchTec;
+    }});
+  }}
+
+  if (!rows.length) {{ alert('Sin datos para exportar'); return; }}
+
+  const keys = Object.keys(rows[0]);
+  const csv  = [keys.join(','), ...rows.map(r => keys.map(k => `"${{r[k]||''}}"`).join(','))].join('\\n');
+  const blob = new Blob([csv], {{type:'text/csv;charset=utf-8;'}});
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `detalle_antiguedad_${{new Date().toISOString().slice(0,10)}}.csv`;
-  document.body.appendChild(a);
+  a.href = URL.createObjectURL(blob);
+  a.download = `tecnologias_${{tabActual}}_${{new Date().toISOString().slice(0,10)}}.csv`;
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }}
 
 // Render inicial
@@ -876,10 +872,16 @@ def publicar_dashboard(html):
 
     try:
         subprocess.run(["git", "-C", REPO_DASHBOARD, "add", "index.html"], check=True)
-        subprocess.run(["git", "-C", REPO_DASHBOARD, "commit", "-m",
-            f"Dashboard actualizado {datetime.now().strftime('%d/%m/%Y %H:%M')}"], check=True)
-        subprocess.run(["git", "-C", REPO_DASHBOARD, "push"], check=True)
-        print("✅ Dashboard publicado en GitHub Pages")
+        # Verificar si hay cambios antes de commitear
+        result = subprocess.run(["git", "-C", REPO_DASHBOARD, "status", "--porcelain"],
+            capture_output=True, text=True)
+        if result.stdout.strip():
+            subprocess.run(["git", "-C", REPO_DASHBOARD, "commit", "-m",
+                f"Dashboard actualizado {datetime.now().strftime('%d/%m/%Y %H:%M')}"], check=True)
+            subprocess.run(["git", "-C", REPO_DASHBOARD, "push"], check=True)
+            print("✅ Dashboard publicado en GitHub Pages")
+        else:
+            print("ℹ️  Dashboard sin cambios — no se requiere push")
         print("🌐 URL: https://javi544.github.io/dashboard-tecnologias-exito/")
     except Exception as e:
         print(f"⚠️  Error publicando: {e}")
