@@ -41,6 +41,26 @@ META_TICKETS_SEMANA = 15
 STOCK_CRITICO       = 0
 STOCK_BAJO          = 2
 
+# Reentrenamiento del Modulo 1 (Gradient Boosting - tickets en riesgo)
+FORZAR_REENTRENAMIENTO = False   # True = ignora el modelo guardado y reentrena siempre
+DIAS_MAX_MODELO_M1     = 7       # reentrena automaticamente si el modelo guardado es mas viejo que esto
+
+def archivo_mas_reciente(*patrones):
+    """Devuelve la ruta del archivo mas reciente (por fecha de modificacion)
+    entre los que matcheen alguno de los patrones glob dados. El orden por
+    nombre de archivo no es confiable (ej. 'data.xlsx' vs 'data (2).xlsx')."""
+    archivos = [a for patron in patrones for a in glob.glob(patron)]
+    if not archivos:
+        return None
+    return max(archivos, key=os.path.getmtime)
+
+def transformar_seguro(label_encoder, valores):
+    """Aplica un LabelEncoder ya entrenado sobre valores nuevos, sin explotar
+    si aparece una categoria que el encoder no vio en su momento (le asigna
+    -1 en vez de lanzar ValueError)."""
+    mapa = {clase: codigo for codigo, clase in enumerate(label_encoder.classes_)}
+    return valores.astype(str).fillna("Sin dato").map(mapa).fillna(-1).astype(int)
+
 # Tecnicos a excluir del analisis de productividad
 # (personal administrativo, coordinadores, o perfiles sin tickets de campo)
 # Agrega o quita nombres segun tu operacion
@@ -103,20 +123,19 @@ seccion("MODULO A: CARGA DE DATOS GLPI")
 os.makedirs(CARPETA_GLPI,   exist_ok=True)
 os.makedirs(CARPETA_PARTES, exist_ok=True)
 
-# Buscar el Excel mas reciente en CARPETA_GLPI
+# Buscar el Excel mas reciente en CARPETA_GLPI (por fecha real, no por nombre)
 if ARCHIVO_GLPI is None:
-    archivos_glpi = sorted(
-        glob.glob(os.path.join(CARPETA_GLPI, "*.xlsx")) +
-        glob.glob(os.path.join(CARPETA_GLPI, "*.xls")),
-        reverse=True
-    )
-    if not archivos_glpi:
+    archivo_glpi = archivo_mas_reciente(
+        os.path.join(CARPETA_GLPI, "*.xlsx"),
+        os.path.join(CARPETA_GLPI, "*.xls"))
+    if archivo_glpi is None:
         print(f"  ERROR: No se encontro ningun Excel en {CARPETA_GLPI}")
         print(f"  Coloca el export de GLPI en: {CARPETA_GLPI}")
         exit(1)
-    ruta_glpi = archivos_glpi[0]
+    ruta_glpi = archivo_glpi
 else:
     ruta_glpi = ARCHIVO_GLPI
+    archivo_glpi = ARCHIVO_GLPI
 
 try:
     df = pd.read_excel(ruta_glpi, sheet_name=HOJA_GLPI)
@@ -182,20 +201,27 @@ df["en_riesgo"]     = (
     df["abierto_activo"]
 ).astype(int)
 
-# Productividad
+# Productividad — semanas activas por tecnico (antiguedad real de CADA UNO,
+# no el promedio de todo el historial del dataset). Con el calculo anterior,
+# un tecnico nuevo con pocas semanas en el equipo salia con "baja
+# productividad" solo por dividir su total entre ~78 semanas de historial
+# que no le corresponden.
 df["tecnico"] = df["Asignatario"].astype(str).str.strip()
-semanas = max(1, (hoy - df["Fecha Apertura"].min()).days // 7)
-tec_vol = df.groupby("tecnico").size().reset_index(name="total_tec")
-tec_vol["tickets_semana"] = (tec_vol["total_tec"] / semanas).round(2)
-df = df.merge(tec_vol, on="tecnico", how="left")
+tec_primera_fecha = df.groupby("tecnico")["Fecha Apertura"].min().rename("primera_fecha")
+tec_vol = df.groupby("tecnico").size().reset_index(name="total_tec").merge(
+    tec_primera_fecha, on="tecnico")
+tec_vol["semanas_activo"] = ((hoy - tec_vol["primera_fecha"]).dt.days // 7).clip(lower=1)
+tec_vol["tickets_semana"] = (tec_vol["total_tec"] / tec_vol["semanas_activo"]).round(2)
+df = df.merge(tec_vol[["tecnico","total_tec","tickets_semana"]], on="tecnico", how="left")
 df["baja_productividad"] = (df["tickets_semana"] < META_TICKETS_SEMANA).astype(int)
 
 # Excluir tecnicos administrativos o sin tickets de campo
 df["es_tecnico_campo"] = ~df["tecnico"].isin(TECNICOS_EXCLUIR)
 print(f"  Tecnicos de campo:  {df[df['es_tecnico_campo']]['tecnico'].nunique()} (excluidos {len(TECNICOS_EXCLUIR)} perfiles administrativos)")
 
+semanas_historial = max(1, (hoy - df["Fecha Apertura"].min()).days // 7)
 print(f"  Rango:              {df['Fecha Apertura'].min().date()} a {df['Fecha Apertura'].max().date()}")
-print(f"  Semanas historial:  {semanas}")
+print(f"  Semanas historial:  {semanas_historial}")
 print(f"  Tecnicos unicos:    {df['tecnico'].nunique()}")
 print(f"  En riesgo:          {df['en_riesgo'].sum():>6} ({df['en_riesgo'].mean()*100:.1f}%)")
 print(f"  SLA excedido:       {df['sla_excedido'].sum():>6} ({df['sla_excedido'].mean()*100:.1f}%)")
@@ -234,10 +260,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score
 
-for col_orig, col_enc in [("regional","regional_enc"), ("CI","ci_enc"),
-                           ("tecnico","tecnico_enc"),  ("Grupo","grupo_enc")]:
+encoders_actuales = {}
+for col_orig, col_enc, clave in [("regional","regional_enc","regional"), ("CI","ci_enc","ci"),
+                                  ("tecnico","tecnico_enc","tecnico"), ("Grupo","grupo_enc","grupo")]:
     le = LabelEncoder()
     df[col_enc] = le.fit_transform(df[col_orig].astype(str).fillna("Sin dato"))
+    encoders_actuales[clave] = le
 
 # Crear df_campo DESPUES de los encodings para heredar todas las columnas
 df_campo = df[df["es_tecnico_campo"]].copy()
@@ -286,38 +314,58 @@ CARPETA_MODELOS = os.path.join(CARPETA_BASE, "modelos")
 os.makedirs(CARPETA_MODELOS, exist_ok=True)
 RUTA_M1 = os.path.join(CARPETA_MODELOS, "m1_tickets_riesgo.joblib")
 
-_guardar  = GUARDAR_MODELOS if 'GUARDAR_MODELOS' in dir() else True
-_forzar   = FORZAR_REENTRENAMIENTO if 'FORZAR_REENTRENAMIENTO' in dir() else False
-_jlib     = JOBLIB_OK if 'JOBLIB_OK' in dir() else False
+_guardar = GUARDAR_MODELOS if 'GUARDAR_MODELOS' in dir() else True
+_jlib    = JOBLIB_OK if 'JOBLIB_OK' in dir() else False
+_modelo_viejo = os.path.exists(RUTA_M1) and (
+    (datetime.now().timestamp() - os.path.getmtime(RUTA_M1)) > DIAS_MAX_MODELO_M1 * 86400
+)
 
-if _jlib and os.path.exists(RUTA_M1) and not _forzar:
-    m1 = joblib.load(RUTA_M1)
-    print(f"  Modelo M1 cargado desde disco (sin re-entrenar)")
-    df["prob_riesgo"] = m1.predict_proba(df[FEAT1].fillna(0))[:,1]
-    m1_cargado = True
-else:
-    m1_cargado = False
+# X1: features de M1 a usar para predecir. Por defecto las de este mismo run
+# (regional_enc/ci_enc/etc recien calculadas). Si se carga el modelo cacheado,
+# se reemplazan por versiones codificadas con LOS MISMOS encoders con que se
+# entreno ese modelo — evita que "regional=Bogota" cambie de numero de un
+# run a otro y el modelo interprete mal los datos (train/serve skew).
+X1 = df[FEAT1].copy()
+
+m1 = None
+m1_cargado = False
+_usar_cache = _jlib and os.path.exists(RUTA_M1) and not FORZAR_REENTRENAMIENTO and not _modelo_viejo
+
+if _usar_cache:
+    try:
+        bundle = joblib.load(RUTA_M1)
+        m1 = bundle["modelo"]
+        enc_m1 = bundle["encoders"]
+        X1["regional_enc"] = transformar_seguro(enc_m1["regional"], df["regional"])
+        X1["ci_enc"]       = transformar_seguro(enc_m1["ci"], df["CI"])
+        X1["tecnico_enc"]  = transformar_seguro(enc_m1["tecnico"], df["tecnico"])
+        X1["grupo_enc"]    = transformar_seguro(enc_m1["grupo"], df["Grupo"])
+        m1_cargado = True
+        print(f"  Modelo M1 cargado desde disco (sin re-entrenar, encoders originales)")
+    except Exception as e:
+        print(f"  AVISO: modelo M1 guardado no es compatible ({e}), reentrenando...")
+        m1_cargado = False
+
+if not m1_cargado:
     m1 = entrenar(
-        df[FEAT1], df["en_riesgo"],
+        X1, df["en_riesgo"],
         GradientBoostingClassifier(n_estimators=200, learning_rate=0.1,
                                    max_depth=4, subsample=0.8, random_state=42),
         "En Riesgo", "OK"
     )
+    if m1 and _jlib and _guardar:
+        joblib.dump({"modelo": m1, "encoders": encoders_actuales}, RUTA_M1)
+        print(f"  Modelo M1 guardado en disco (con encoders)")
 
-if m1 and not m1_cargado:
-    if _jlib and _guardar:
-        joblib.dump(m1, RUTA_M1)
-        print(f"  Modelo M1 guardado en disco")
-    imp1 = pd.Series(m1.feature_importances_, index=FEAT1).sort_values(ascending=False)
-elif m1:
-    imp1 = pd.Series(m1.feature_importances_, index=FEAT1).sort_values(ascending=False) if hasattr(m1, 'feature_importances_') else None
-    if imp1 is not None:
+if m1:
+    if hasattr(m1, 'feature_importances_'):
+        imp1 = pd.Series(m1.feature_importances_, index=FEAT1).sort_values(ascending=False)
         print("  Importancia de variables:")
         for feat, imp in imp1.items():
             barra = "I" * int(imp * 40)
             print(f"    {feat:<22} {barra} {imp:.3f}")
 
-    df["prob_riesgo"] = m1.predict_proba(df[FEAT1].fillna(0))[:,1]
+    df["prob_riesgo"] = m1.predict_proba(X1[FEAT1].fillna(0))[:,1]
     activos = df[df["abierto_activo"]]
     if len(activos) > 0:
         print(f"\n  TOP 15 TICKETS ACTIVOS MAS URGENTES:")
@@ -632,7 +680,7 @@ try:
     import json as _json
     _predicciones = {
         "generado_en": datetime.now().isoformat(),
-        "archivo_glpi": os.path.basename(archivos_glpi[0]) if archivos_glpi else "",
+        "archivo_glpi": os.path.basename(archivo_glpi) if archivo_glpi else "",
         "resumen": {
             "total_tickets": int(len(df)),
             "tickets_en_riesgo": int(df["en_riesgo"].sum()),
