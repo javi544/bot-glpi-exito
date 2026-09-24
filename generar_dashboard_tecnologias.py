@@ -182,11 +182,12 @@ def preparar_datos(df):
     cols_detalle = [c for c in cols_detalle if c in df_ant.columns]
     detalle_ant = df_ant[cols_detalle].copy()
     detalle_ant['ID'] = detalle_ant['ID'].astype(str).str.strip()
+    detalle_ant['apertura'] = df_ant['_fecha_ap'].dt.strftime('%d/%m/%Y').fillna('')
     if col_tecnico in detalle_ant.columns:
         detalle_ant = detalle_ant.rename(columns={col_tecnico: 'Tecnico'})
     detalle_ant = detalle_ant.fillna('Sin asignar')
-    # NO ordenar antes de tomar muestra — tomar todos y ordenar después
-    detalle_ant = detalle_ant.sort_values('dias_abierto', ascending=False)
+    # Orden cronológico real: la más antigua primero (por fecha, no por texto)
+    detalle_ant = detalle_ant.loc[df_ant['_fecha_ap'].sort_values(na_position='last').index]
 
     # DIAGNÓSTICO
     print("=== DIAGNÓSTICO ANTIGÜEDAD ===")
@@ -401,7 +402,7 @@ footer {{ text-align:center; padding:20px; color:#888; font-size:12px; border-to
     <div class="card">
       <h3>📋 Detalle Tickets Antiguos</h3>
       <table>
-        <thead><tr><th>ID</th><th>Técnico</th><th>Grupo</th><th>Regional</th><th>Tecnología</th><th>Días</th><th>Rango</th></tr></thead>
+        <thead><tr><th>ID</th><th>Técnico</th><th>Grupo</th><th>Regional</th><th>Tecnología</th><th>Apertura</th><th>Días</th><th>Rango</th></tr></thead>
         <tbody id="tabla-antiguedad"></tbody>
       </table>
     </div>
@@ -812,6 +813,7 @@ function renderAntiguedad() {{
       <td>${{r.grupo_limpio||'Sin grupo'}}</td>
       <td><span class="badge badge-blue">${{r.Regional}}</span></td>
       <td>${{r.Tecnologia}}</td>
+      <td>${{r.apertura||''}}</td>
       <td><b>${{r.dias_abierto}}</b></td>
       <td><span class="badge badge-${{color}}">${{r.rango}}</span></td>
     </tr>`;

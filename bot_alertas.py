@@ -495,7 +495,7 @@ def generar_dashboard(todos_los_datos):
             (df_total['fecha_vencimiento'].notna()) &
             (df_total['fecha_vencimiento'] >= ahora_dt) &
             (df_total['fecha_vencimiento'] <= limite_venc)
-        ].copy()
+        ].sort_values('fecha_vencimiento').copy()
         for _, r in vencen.iterrows():
             rows_vencen.append({
                 "regional": safe_str(r.get("Regional", "")),
@@ -513,7 +513,7 @@ def generar_dashboard(todos_los_datos):
             (df_total['Última modificación'] <= limite_upd)
         ].copy()
         sin_upd['dias'] = (ahora_dt - sin_upd['Última modificación']).dt.days
-        for _, r in sin_upd.sort_values('dias', ascending=False).iterrows():
+        for _, r in sin_upd.sort_values('Última modificación').iterrows():
             rows_sin_update.append({
                 "regional": safe_str(r.get("Regional", "")),
                 "id": safe_str(r.get("ID", "")),
@@ -526,7 +526,7 @@ def generar_dashboard(todos_los_datos):
 
         # Más antiguos
         df_total['dias_abierto'] = (ahora_dt - df_total['Fecha de apertura']).dt.days
-        ant = df_total[df_total['dias_abierto'].notna()].sort_values('dias_abierto', ascending=False)
+        ant = df_total[df_total['Fecha de apertura'].notna()].sort_values('Fecha de apertura')
         for _, r in ant.head(50).iterrows():
             rows_antiguos.append({
                 "regional": safe_str(r.get("Regional", "")),
