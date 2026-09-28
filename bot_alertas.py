@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import time
 import glob
 import logging
@@ -886,6 +887,27 @@ def main():
             logging.info("✅ Dashboard tecnologías publicado")
         except Exception as e:
             logging.warning(f"⚠️  Error generando dashboard tecnologías: {e}")
+
+        # Reentrenar el modelo de IA con los datos recien descargados.
+        # Corre como proceso aparte (no import directo) para que un fallo
+        # ahi no tumbe el resto del ciclo del bot -- sistema_ia_exito.py
+        # ya decide solo si reentrena de verdad o reusa el modelo en cache
+        # (ver DIAS_MAX_MODELO_M1 en ese script).
+        try:
+            logging.info("🤖 Actualizando modelo de IA...")
+            ruta_modelo = os.path.join(os.path.dirname(__file__), "sistema_ia_exito.py")
+            resultado = subprocess.run(
+                [sys.executable, ruta_modelo],
+                capture_output=True, text=True, timeout=900
+            )
+            if resultado.returncode == 0:
+                logging.info("✅ Modelo de IA actualizado")
+            else:
+                logging.warning(f"⚠️  sistema_ia_exito.py termino con error (codigo {resultado.returncode}): {resultado.stderr[-500:]}")
+        except subprocess.TimeoutExpired:
+            logging.warning("⚠️  sistema_ia_exito.py tardo mas de 15 minutos, se cancelo")
+        except Exception as e:
+            logging.warning(f"⚠️  Error actualizando modelo de IA: {e}")
 
         # Enviar resumen consolidado a Coordinación
         logging.info(f"\n📲 Enviando resumen a '{CONFIG['grupo_coordinacion']}'...")

@@ -14,11 +14,22 @@ USO:
   python sistema_ia_exito.py
 """
 
+import sys
 import pandas as pd
 import numpy as np
 import glob, os, warnings
 from datetime import datetime
 warnings.filterwarnings("ignore")
+
+# El script imprime emojis (✅⚠️🤖) en varios print(). Si se corre desde
+# una terminal/proceso cuya codepage no sea UTF-8 (ej. invocado como
+# subprocess desde otro script, o cmd.exe con la codepage por defecto de
+# Windows), esos print() explotan con UnicodeEncodeError y el script se
+# cae a la mitad. Se fuerza UTF-8 en stdout/stderr para que corra igual
+# sin importar como se invoque.
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 try:
     import joblib
     JOBLIB_OK = True
