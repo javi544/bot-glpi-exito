@@ -29,9 +29,11 @@ except ImportError:
 # CONFIGURACION
 # ════════════════════════════════════════════════════════════════
 # Rutas de archivos — ajusta si cambias de carpeta
-CARPETA_BASE   = r"C:\Bot_Incidentes"                          # carpeta raiz del proyecto
-CARPETA_GLPI   = os.path.join(CARPETA_BASE, "glpi")            # C:\Bot_Incidentes\glpi\
-CARPETA_PARTES = os.path.join(CARPETA_BASE, "partes")          # C:\Bot_Incidentes\partes\
+CARPETA_BASE    = r"C:\Bot_Incidentes"                          # carpeta raiz del proyecto
+CARPETA_GLPI    = os.path.join(CARPETA_BASE, "glpi")            # C:\Bot_Incidentes\glpi\
+CARPETA_PARTES  = os.path.join(CARPETA_BASE, "partes")          # C:\Bot_Incidentes\partes\
+CARPETA_ALERTAS = os.path.join(CARPETA_BASE, "data")            # misma carpeta que alimenta el bot de alertas
+REGIONALES_ALERTAS = ["CALI", "MEDELLIN", "COSTA", "BOGOTA"]
 
 # El script busca el Excel mas reciente en CARPETA_GLPI automaticamente
 # Si quieres apuntar a un archivo fijo usa: ARCHIVO_GLPI = r"C:\...\archivo.xlsx"
@@ -60,6 +62,28 @@ def transformar_seguro(label_encoder, valores):
     -1 en vez de lanzar ValueError)."""
     mapa = {clase: codigo for codigo, clase in enumerate(label_encoder.classes_)}
     return valores.astype(str).fillna("Sin dato").map(mapa).fillna(-1).astype(int)
+
+def ids_backlog_alertas(carpeta):
+    """IDs de tickets en el backlog actual que ya reporta el bot de alertas
+    de WhatsApp (union del snapshot mas reciente por regional). El modelo
+    se sigue entrenando con el historico completo de GLPI (necesita
+    volumen para aprender bien), pero las predicciones que se exportan al
+    dashboard se restringen a esta misma poblacion -- para ser consistente
+    con lo que el equipo ya ve por WhatsApp, en vez de todo el universo de
+    tickets activos de GLPI (que incluye grupos que el bot excluye
+    explicitamente, como MESA/ADMUSU/SCCM)."""
+    ids = set()
+    for regional in REGIONALES_ALERTAS:
+        archivos = glob.glob(os.path.join(carpeta, f"alertas_{regional.lower()}_*.csv"))
+        if not archivos:
+            continue
+        archivo = max(archivos, key=os.path.getmtime)
+        try:
+            d = pd.read_csv(archivo, encoding="utf-8-sig")
+            ids.update(d["ID"].astype(str).str.strip())
+        except Exception as e:
+            print(f"  AVISO: no se pudo leer {archivo} para el backlog de alertas: {e}")
+    return ids
 
 # Tecnicos a excluir del analisis de productividad
 # (personal administrativo, coordinadores, o perfiles sin tickets de campo)
@@ -149,10 +173,14 @@ except FileNotFoundError:
 
 hoy = pd.Timestamp.today()
 
-# Fechas
-df["Fecha Apertura"]      = pd.to_datetime(df["Fecha Apertura"],      errors="coerce")
-df["Fecha Cierre"]        = pd.to_datetime(df["Fecha Cierre"],        errors="coerce")
-df["Fecha Icumplimiento"] = pd.to_datetime(df["Fecha Icumplimiento"], errors="coerce")
+# Fechas -- algunos exports de GLPI vienen sin ciertas columnas de fecha
+# (ej. un export configurado distinto no trae "Fecha Cierre"). Se crean
+# vacias en vez de crashear todo el script por una columna faltante.
+for _col_fecha in ["Fecha Apertura", "Fecha Cierre", "Fecha Icumplimiento"]:
+    if _col_fecha not in df.columns:
+        df[_col_fecha] = pd.NaT
+        print(f"  AVISO: el export no trae la columna '{_col_fecha}', se deja vacia")
+    df[_col_fecha] = pd.to_datetime(df[_col_fecha], errors="coerce")
 
 df["dias_abierto"]  = (df["Fecha Cierre"].fillna(hoy) - df["Fecha Apertura"]).dt.days.clip(0)
 df["mes_apertura"]  = df["Fecha Apertura"].dt.month
@@ -631,6 +659,7 @@ for (tec, reg), row in prod6.head(25).iterrows():
     print(linea)
 
 # Detectar caídas bruscas (último mes vs penúltimo)
+_caidas_export = []
 if len(cols6) >= 2:
     ultimo   = cols6[-1]
     penultimo= cols6[-2]
@@ -648,6 +677,16 @@ if len(cols6) >= 2:
             print(f"  {str(tec)[:33]:<35} {str(reg):<12} "
                   f"{int(row[penultimo]):>8} {int(row[ultimo]):>8} "
                   f"{int(row['caida']):>7} {row['pct_caida']:>7.1f}%  ⚠")
+            _caidas_export.append({
+                "tecnico": str(tec),
+                "regional": str(reg),
+                "mes_anterior": meses_labels.get(penultimo, penultimo),
+                "mes_actual": meses_labels.get(ultimo, ultimo),
+                "tickets_anterior": int(row[penultimo]),
+                "tickets_actual": int(row[ultimo]),
+                "caida": int(row["caida"]),
+                "pct_caida": float(row["pct_caida"]),
+            })
 
 # ════════════════════════════════════════════════════════════════
 # EQUIDAD Y ETICA
@@ -686,13 +725,26 @@ try:
             "tickets_en_riesgo": int(df["en_riesgo"].sum()),
             "frus_criticas": int((df_partes["Total On Hand Qty"]==0).sum()) if df_partes is not None else 0,
             "pct_sla": round((1 - df["sla_excedido"].mean()) * 100, 1),
+            "alertas_productividad": len(_caidas_export),
         },
         "tickets_riesgo": [],
         "frus_riesgo": [],
+        "caidas_productividad": _caidas_export,
     }
     if "prob_riesgo" in df.columns:
         _activos_mask = df["Estado"].astype(str).isin(["En curso (asignada)","En curso (planificada)","En espera"])
-        top = df[_activos_mask].sort_values("prob_riesgo", ascending=False).head(20)
+        # Restringir a la MISMA poblacion de tickets que ya reporta el bot
+        # de alertas (backlog actual por regional), no todo el universo de
+        # activos de GLPI -- si no hay CSV de alertas disponibles, se sigue
+        # de largo sin filtrar en vez de dejar la lista vacia.
+        _ids_alertas = ids_backlog_alertas(CARPETA_ALERTAS)
+        if _ids_alertas:
+            _en_backlog = df["Tiquete"].astype(str).str.strip().isin(_ids_alertas)
+            print(f"  Backlog de alertas: {len(_ids_alertas)} tickets | de los activos de GLPI, {int((_activos_mask & _en_backlog).sum())} coinciden")
+        else:
+            print("  AVISO: sin CSV de alertas disponibles, prediciones sin restringir al backlog de alertas")
+            _en_backlog = pd.Series(True, index=df.index)
+        top = df[_activos_mask & _en_backlog].sort_values("prob_riesgo", ascending=False).head(20)
         for _, r in top.iterrows():
             _predicciones["tickets_riesgo"].append({
                 "id": str(r.get("Tiquete","")),
