@@ -26,9 +26,9 @@ load_dotenv(ruta_env)
 
 REGIONALES = [
     {"nombre": "CALI",     "filtro": "CALI",     "grupo_wa": "IT en sitio Cali",             "meta_regional": 35},
-    {"nombre": "MEDELLIN", "filtro": "MEDELLIN",  "grupo_wa": "IT en sitio Medellin Toshiba", "meta_regional": 62},
-    {"nombre": "COSTA",    "filtro": "COSTA",     "grupo_wa": "IT en sitio Costa",            "meta_regional": 25},
-    {"nombre": "BOGOTA",   "filtro": "BOGOTA",    "grupo_wa": "IT en sitio Bogota Toshiba",   "meta_regional": 62},
+    {"nombre": "MEDELLIN", "filtro": "MEDELLIN",  "grupo_wa": "IT On Site, Clic Cafe Medellin y EJe Cafetero", "meta_regional": 62},
+    {"nombre": "COSTA",    "filtro": "COSTA",     "grupo_wa": "IT On Site Costa",                              "meta_regional": 25},
+    {"nombre": "BOGOTA",   "filtro": "BOGOTA",    "grupo_wa": "IT  On Site y Clic Cafe Bogota",                "meta_regional": 62},
 ]
 
 # Metas personalizadas por técnico (sobreescriben la meta general)
@@ -411,30 +411,33 @@ def enviar_whatsapp(driver, grupo, msg):
     WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "pane-side")))
 
     lista = driver.find_element(By.ID, "pane-side")
-    driver.execute_script("arguments[0].scrollTop = 0", lista)
-    time.sleep(0.5)
+    # Esperar a que la lista de chats esté cargada (pane-side aparece antes que los chats)
+    WebDriverWait(driver, 30).until(
+        lambda d: len(d.find_elements(By.XPATH, '//div[@id="pane-side"]//span[@title]')) >= 5
+    )
+    time.sleep(2)
 
+    # Coincidencia exacta ignorando espacios dobles/extremos. No se usa búsqueda parcial
+    # porque varios grupos comparten el prefijo "IT On Site" y podría enviarse al grupo equivocado.
+    # translate() convierte espacios no separables (\u00a0, usados por WhatsApp en algunos nombres) en espacios normales.
+    grupo_norm = " ".join(grupo.replace("\u00a0", " ").split())
+    xpath = f'//span[normalize-space(translate(@title, "\u00a0", " "))="{grupo_norm}"]'
     encontrado = False
-    for _ in range(30):
-        try:
-            driver.find_element(By.XPATH, f'//span[@title="{grupo}"]').click()
-            encontrado = True
-            break
-        except Exception:
-            driver.execute_script("arguments[0].scrollTop += 300", lista)
-            time.sleep(0.2)
-
-    if not encontrado:
-        palabras = " ".join(grupo.split()[:3])
+    for pasada in range(2):  # si la lista seguía cargando en la 1ra pasada, se recorre de nuevo
         driver.execute_script("arguments[0].scrollTop = 0", lista)
+        time.sleep(1)
         for _ in range(30):
             try:
-                driver.find_element(By.XPATH, f'//span[contains(@title,"{palabras}")]').click()
+                driver.find_element(By.XPATH, xpath).click()
                 encontrado = True
                 break
             except Exception:
                 driver.execute_script("arguments[0].scrollTop += 300", lista)
-                time.sleep(0.2)
+                time.sleep(0.3)
+        if encontrado:
+            break
+        logging.warning(f"  ⚠️  Grupo no encontrado en pasada {pasada + 1}, reintentando...")
+        time.sleep(3)
 
     if not encontrado:
         raise Exception(f"Grupo '{grupo}' no encontrado")
