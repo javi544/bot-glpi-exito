@@ -28,9 +28,9 @@ load_dotenv(ruta_env)
 
 REGIONALES = [
     {"nombre": "CALI",     "filtro": "CALI",     "grupo_wa": "IT en sitio Cali"},
-    {"nombre": "MEDELLIN", "filtro": "MEDELLIN",  "grupo_wa": "IT en sitio Medellin Toshiba"},
-    {"nombre": "COSTA",    "filtro": "COSTA",     "grupo_wa": "IT en sitio Costa"},
-    {"nombre": "BOGOTA",   "filtro": "BOGOTA",    "grupo_wa": "IT en sitio Bogota Toshiba"},
+    {"nombre": "MEDELLIN", "filtro": "MEDELLIN",  "grupo_wa": "IT On Site, Clic Cafe Medellin y EJe Cafetero"},
+    {"nombre": "COSTA",    "filtro": "COSTA",     "grupo_wa": "IT On Site Costa"},
+    {"nombre": "BOGOTA",   "filtro": "BOGOTA",    "grupo_wa": "IT  On Site y Clic Cafe Bogota"},
 ]
 
 CONFIG = {
@@ -366,13 +366,19 @@ def enviar_whatsapp(driver, grupo, msg):
 
     encontrado = False
 
+    # Coincidencia exacta ignorando espacios dobles/extremos. No se usa búsqueda parcial
+    # porque varios grupos comparten el prefijo "IT On Site" y podría enviarse al grupo equivocado.
+    # translate() convierte espacios no separables (\u00a0, usados por WhatsApp en algunos nombres) en espacios normales.
+    grupo_norm = " ".join(grupo.replace("\u00a0", " ").split())
+    xpath_grupo = f'//span[normalize-space(translate(@title, "\u00a0", " "))="{grupo_norm}"]'
+
     # Intento 1: scroll en lista de chats
     lista = driver.find_element(By.ID, "pane-side")
     driver.execute_script("arguments[0].scrollTop = 0", lista)
     time.sleep(0.5)
     for _ in range(50):
         try:
-            driver.find_element(By.XPATH, f'//span[@title="{grupo}"]').click()
+            driver.find_element(By.XPATH, xpath_grupo).click()
             encontrado = True
             logging.info(f"  ✅ Grupo encontrado por scroll")
             break
@@ -403,15 +409,12 @@ def enviar_whatsapp(driver, grupo, msg):
             )
             caja_busq.click()
             time.sleep(0.3)
-            pyperclip.copy(grupo)
+            pyperclip.copy(grupo_norm)
             caja_busq.send_keys(Keys.CONTROL, "v")
             time.sleep(2)
 
-            primeras = grupo[:5]
             resultado = WebDriverWait(driver, 8).until(
-                EC.element_to_be_clickable((By.XPATH,
-                    f'//span[@title="{grupo}"] | //span[contains(@title,"{primeras}")]'
-                ))
+                EC.element_to_be_clickable((By.XPATH, xpath_grupo))
             )
             resultado.click()
             encontrado = True
