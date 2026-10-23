@@ -561,20 +561,35 @@ def enviar_whatsapp(driver, grupo, msg):
     grupo_norm = " ".join(grupo.replace("\u00a0", " ").split())
     xpath = f'//span[normalize-space(translate(@title, "\u00a0", " "))="{grupo_norm}"]'
     encontrado = False
+    ultimo_error = None
     for pasada in range(2):  # si la lista seguía cargando en la 1ra pasada, se recorre de nuevo
         driver.execute_script("arguments[0].scrollTop = 0", lista)
         time.sleep(1)
         for _ in range(30):
-            try:
-                driver.find_element(By.XPATH, xpath).click()
-                encontrado = True
-                break
-            except Exception:
-                driver.execute_script("arguments[0].scrollTop += 300", lista)
-                time.sleep(0.3)
+            elementos = driver.find_elements(By.XPATH, xpath)
+            if elementos:
+                # Visible pero el clic puede fallar mientras WhatsApp sincroniza: probar clic JS
+                # y no hacer scroll (alejaría el grupo de la vista)
+                try:
+                    elementos[0].click()
+                    encontrado = True
+                    break
+                except Exception as e:
+                    ultimo_error = e
+                try:
+                    driver.execute_script("arguments[0].click();", elementos[0])
+                    encontrado = True
+                    break
+                except Exception as e:
+                    ultimo_error = e
+                time.sleep(1)
+                continue
+            driver.execute_script("arguments[0].scrollTop += 300", lista)
+            time.sleep(0.3)
         if encontrado:
             break
-        logging.warning(f"  ⚠️  Grupo no encontrado en pasada {pasada + 1}, reintentando...")
+        motivo = f" (último error al hacer clic: {type(ultimo_error).__name__})" if ultimo_error else ""
+        logging.warning(f"  ⚠️  Grupo no encontrado en pasada {pasada + 1}{motivo}, reintentando...")
         time.sleep(3)
 
     if not encontrado:
