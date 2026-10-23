@@ -328,15 +328,16 @@ def leer_csv(archivo, nombre):
 # =========================
 # PROCESAR
 # =========================
-def procesar(asignados, cerrados, factor_meta=1):
+def procesar(asignados, cerrados, factor_meta=1, usar_metas_personalizadas=True):
     meta_base = CONFIG["meta_tecnico"]
     resultado = []
     tecnicos = (set(asignados) | set(cerrados)) - {"__total__"} - TECNICOS_EXCLUIDOS
     for nombre in tecnicos:
         a = asignados.get(nombre, 0)
         c = cerrados.get(nombre, 0)
-        # Usar meta personalizada si existe, si no la meta general
-        meta = METAS_PERSONALIZADAS.get(nombre, meta_base) * factor_meta
+        # Usar meta personalizada si existe (solo reporte diario), si no la meta general
+        meta = METAS_PERSONALIZADAS.get(nombre, meta_base) if usar_metas_personalizadas else meta_base
+        meta *= factor_meta
         avance = min((c / meta) * 100, 100) if meta else 0
         icono = "🟢" if c >= meta else "🟡" if c >= meta * 0.5 else "🔴"
         resultado.append(Tecnico(nombre, a, c, avance, icono, meta))
@@ -523,7 +524,8 @@ def productividad_semanal_regional(driver, r, asignados, desde, hasta):
     """Descarga los cierres de la semana de una regional y devuelve (mensaje, resumen)."""
     archivo = descargar_csv(driver, construir_url_csv_semana(r['filtro'], desde, hasta), f"SEMANA {r['nombre']}")
     cerrados_sem = leer_csv(archivo, f"SEMANA {r['nombre']}")
-    data = procesar(asignados, cerrados_sem, factor_meta=CONFIG["dias_meta_semanal"])
+    # Semanal: misma meta para todos (7 diarios × 5), sin metas personalizadas
+    data = procesar(asignados, cerrados_sem, factor_meta=CONFIG["dias_meta_semanal"], usar_metas_personalizadas=False)
     data.sort(key=lambda t: (t.cerrados, t.avance), reverse=True)
     total = cerrados_sem.get("__total__", 0)
     meta_reg = r['meta_regional'] * CONFIG["dias_meta_semanal"]
