@@ -303,51 +303,75 @@ def analizar_alertas(df):
 # =========================
 # GENERAR MENSAJE WHATSAPP
 # =========================
-def generar_mensaje(regional, vencen, sin_update, antiguos):
-    ahora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    msg  = f"⚠️ *ALERTAS GLPI - {regional}*\n"
-    msg += f"📅 {ahora}\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+def _tecnico(row):
+    valor = row.get('Asignado a - Técnico')
+    return str(valor).strip() if pd.notna(valor) and str(valor).strip() else "Sin asignar"
 
-    # Vencimientos 48h
-    msg += f"🚨 *VENCEN EN {CONFIG['horas_vencimiento']}H* ({len(vencen)})\n"
+
+def _icono_vencimiento(fecha_venc, ahora):
+    """Color por horas que faltan para vencer: ≤12h rojo, ≤24h naranja, resto amarillo."""
+    horas = (fecha_venc - ahora).total_seconds() / 3600
+    return "🔴" if horas <= 12 else "🟠" if horas <= 24 else "🟡"
+
+
+def _icono_sin_update(dias):
+    """Color por días sin mover: ≥15 rojo, ≥10 naranja, resto amarillo."""
+    return "🟥" if dias >= 15 else "🟧" if dias >= 10 else "🟨"
+
+
+MEDALLAS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+
+
+def generar_mensaje(regional, vencen, sin_update, antiguos):
+    ahora_dt = datetime.now()
+    sep = "━━━━━━━━━━━━━━━━━━━━\n"
+    mas_antiguo = int(antiguos['dias_abierto'].max()) if not antiguos.empty else 0
+
+    msg  = f"🚨 *ALERTAS GLPI — {regional}*\n"
+    msg += f"📅 {ahora_dt.strftime('%d/%m/%Y')} · 🕐 {ahora_dt.strftime('%H:%M')}\n"
+    msg += sep
+    msg += "📊 *RESUMEN*\n"
+    msg += f"🔴 Vencen en {CONFIG['horas_vencimiento']}h: *{len(vencen)}*\n"
+    msg += f"🟠 Sin actualizar +{CONFIG['dias_sin_actualizar']}d: *{len(sin_update)}*\n"
+    msg += f"🟣 Más antiguo: *{mas_antiguo} días*\n"
+    msg += sep
+
+    # Vencimientos
+    msg += f"\n🔥 *VENCEN EN {CONFIG['horas_vencimiento']}H* ({len(vencen)})\n"
     if vencen.empty:
         msg += "✅ Sin tickets próximos a vencer\n"
     else:
         for _, row in vencen.head(10).iterrows():
-            tecnico = str(row.get('Asignado a - Técnico', 'Sin asignar')).strip()
             fecha   = row['fecha_vencimiento'].strftime("%d/%m %H:%M")
             pct     = row['porcentaje_sla']
-            pct_str = f" {pct}%" if pct else ""
-            msg += f"• #{row['ID']} → {fecha}{pct_str} | {tecnico}\n"
-
-    msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
+            pct_str = f" · {int(pct)}%" if pd.notna(pct) else ""
+            msg += f"{_icono_vencimiento(row['fecha_vencimiento'], ahora_dt)} #{row['ID']} · ⏳ {fecha}{pct_str}\n"
+            msg += f"      👤 {_tecnico(row)}\n"
+        if len(vencen) > 10:
+            msg += f"      _… y {len(vencen) - 10} más_\n"
 
     # Sin actualizar
-    msg += f"⏰ *SIN ACTUALIZAR +{CONFIG['dias_sin_actualizar']} DÍAS* ({len(sin_update)})\n"
+    msg += f"\n⏰ *SIN ACTUALIZAR +{CONFIG['dias_sin_actualizar']} DÍAS* ({len(sin_update)})\n"
     if sin_update.empty:
         msg += "✅ Todos los tickets actualizados\n"
     else:
         for _, row in sin_update.head(10).iterrows():
-            dias    = int(row['dias_sin_update'])
-            grupo   = row['grupo_limpio']
-            tecnico = str(row.get('Asignado a - Técnico', 'Sin asignar')).strip()
-            msg += f"• #{row['ID']} → {dias}d sin mover | {grupo} | {tecnico}\n"
-
-    msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
+            dias = int(row['dias_sin_update'])
+            msg += f"{_icono_sin_update(dias)} #{row['ID']} · {dias}d sin mover\n"
+            msg += f"      👤 {_tecnico(row)} · 🏷️ {row['grupo_limpio']}\n"
+        if len(sin_update) > 10:
+            msg += f"      _… y {len(sin_update) - 10} más_\n"
 
     # Más antiguos
-    msg += f"📅 *TOP {CONFIG['top_antiguos']} MÁS ANTIGUOS POR GRUPO*\n"
-    grupos = antiguos['grupo_limpio'].unique()
-    for grupo in sorted(grupos):
+    msg += f"\n🗂️ *TOP {CONFIG['top_antiguos']} MÁS ANTIGUOS POR GRUPO*\n"
+    for grupo in sorted(antiguos['grupo_limpio'].unique()):
         tickets_grupo = antiguos[antiguos['grupo_limpio'] == grupo].head(CONFIG['top_antiguos'])
         if tickets_grupo.empty:
             continue
-        msg += f"\n_{grupo}_\n"
-        for _, row in tickets_grupo.iterrows():
-            dias    = int(row['dias_abierto']) if pd.notna(row['dias_abierto']) else 0
-            tecnico = str(row.get('Asignado a - Técnico', 'Sin asignar')).strip()
-            msg += f"• #{row['ID']} → {dias}d | {tecnico}\n"
+        msg += f"\n📁 *{grupo}*\n"
+        for i, (_, row) in enumerate(tickets_grupo.iterrows()):
+            dias = int(row['dias_abierto']) if pd.notna(row['dias_abierto']) else 0
+            msg += f"   {MEDALLAS[i] if i < len(MEDALLAS) else '•'} #{row['ID']} · {dias}d · 👤 {_tecnico(row)}\n"
 
     msg += FIRMA
     return msg
