@@ -1,12 +1,14 @@
 import os
 import time
 import glob
+import json
 import logging
 import pyperclip
 import pandas as pd
 
 from collections import namedtuple
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from urllib.parse import quote
 from dotenv import load_dotenv
 
 from selenium import webdriver
@@ -57,6 +59,11 @@ CONFIG = {
     "carpeta_descargas":    os.path.join(os.path.expanduser("~"), "Downloads"),
     "savedsearch_cargas":   "1192",
     "savedsearch_cerrados": "1295",
+    # Productividad semanal: cierres de lunes a viernes, se envía los viernes desde las 17:00
+    "grupo_coordinacion":   "Coordinacion",
+    "dias_meta_semanal":    5,   # meta semanal = meta diaria × 5 (lun–vie)
+    "hora_envio_semanal":   17,
+    "estado_semanal":       os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "productividad_semanal.json"),
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -120,6 +127,23 @@ def construir_url_csv_cerrados(filtro):
         f"&criteria%5B3%5D%5Bsearchtype%5D=contains&criteria%5B3%5D%5Bvalue%5D={filtro}"
         "&display_type=-3"
     )
+
+
+def construir_url_csv_semana(filtro, desde, hasta):
+    """URL CSV de cerrados entre desde (incl.) y hasta (excl.) — mismos filtros que cerrados hoy."""
+    criterio_hoy = (
+        "&criteria%5B2%5D%5Blink%5D=AND&criteria%5B2%5D%5Bfield%5D=17"
+        "&criteria%5B2%5D%5Bsearchtype%5D=equals&criteria%5B2%5D%5Bvalue%5D=TODAY"
+    )
+    criterio_rango = (
+        "&criteria%5B2%5D%5Blink%5D=AND&criteria%5B2%5D%5Bfield%5D=17"
+        f"&criteria%5B2%5D%5Bsearchtype%5D=morethan&criteria%5B2%5D%5Bvalue%5D={quote(desde.strftime('%Y-%m-%d 00:00:00'))}"
+        "&criteria%5B4%5D%5Blink%5D=AND&criteria%5B4%5D%5Bfield%5D=17"
+        f"&criteria%5B4%5D%5Bsearchtype%5D=lessthan&criteria%5B4%5D%5Bvalue%5D={quote(hasta.strftime('%Y-%m-%d 00:00:00'))}"
+    )
+    url = construir_url_csv_cerrados(filtro)
+    assert criterio_hoy in url
+    return url.replace(criterio_hoy, criterio_rango)
 
 
 # =========================
@@ -304,7 +328,7 @@ def leer_csv(archivo, nombre):
 # =========================
 # PROCESAR
 # =========================
-def procesar(asignados, cerrados):
+def procesar(asignados, cerrados, factor_meta=1):
     meta_base = CONFIG["meta_tecnico"]
     resultado = []
     tecnicos = (set(asignados) | set(cerrados)) - {"__total__"} - TECNICOS_EXCLUIDOS
@@ -312,7 +336,7 @@ def procesar(asignados, cerrados):
         a = asignados.get(nombre, 0)
         c = cerrados.get(nombre, 0)
         # Usar meta personalizada si existe, si no la meta general
-        meta = METAS_PERSONALIZADAS.get(nombre, meta_base)
+        meta = METAS_PERSONALIZADAS.get(nombre, meta_base) * factor_meta
         avance = min((c / meta) * 100, 100) if meta else 0
         icono = "🟢" if c >= meta else "🟡" if c >= meta * 0.5 else "🔴"
         resultado.append(Tecnico(nombre, a, c, avance, icono, meta))
@@ -399,6 +423,118 @@ def generar_mensaje(regional, meta_regional, asignados, cerrados, data, modo):
     msg += "_🤖 Bot desarrollado por el Ing. Javier Trujillo_"
 
     return msg
+
+
+# =========================
+# PRODUCTIVIDAD SEMANAL
+# =========================
+def semana_lun_vie(hoy=None):
+    """(lunes, sábado) de la semana en curso; el rango [desde, hasta) cubre lunes a viernes."""
+    hoy = hoy or date.today()
+    lunes = hoy - timedelta(days=hoy.weekday())
+    return lunes, lunes + timedelta(days=5)
+
+
+def toca_semanal(ahora=None):
+    """Viernes desde la hora de envío; sábado y domingo quedan como reintento si el viernes falló."""
+    ahora = ahora or datetime.now()
+    return (ahora.weekday() == 4 and ahora.hour >= CONFIG["hora_envio_semanal"]) or ahora.weekday() in (5, 6)
+
+
+def cargar_estado_semanal(semana):
+    """Estado de envíos de la semana; si el archivo es de otra semana se empieza de cero."""
+    try:
+        with open(CONFIG["estado_semanal"], encoding="utf-8") as f:
+            estado = json.load(f)
+        if estado.get("semana") == semana.isoformat():
+            return estado
+    except Exception:
+        pass
+    return {"semana": semana.isoformat(), "regionales": {}, "coordinacion": False}
+
+
+def guardar_estado_semanal(estado):
+    os.makedirs(os.path.dirname(CONFIG["estado_semanal"]), exist_ok=True)
+    with open(CONFIG["estado_semanal"], "w", encoding="utf-8") as f:
+        json.dump(estado, f, ensure_ascii=False, indent=2)
+
+
+def generar_mensaje_semanal(regional, meta_regional_semana, total_cierres, data, desde, hasta):
+    fin = hasta - timedelta(days=1)
+    avance  = min((total_cierres / meta_regional_semana) * 100, 100) if meta_regional_semana else 0
+    icono_r = "🟢" if avance >= 100 else "🟡" if avance >= 50 else "🔴"
+    cumplen = sum(1 for t in data if t.cerrados >= t.meta)
+
+    msg  = f"📊 *PRODUCTIVIDAD SEMANAL - {regional}*\n"
+    msg += f"📅 Semana {desde.strftime('%d/%m')} al {fin.strftime('%d/%m/%Y')}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "📋 *Resumen Regional*\n"
+    msg += f"✅ Cierres semana: *{total_cierres}/{meta_regional_semana}*\n"
+    msg += f"{icono_r} Avance regional: {barra_progreso(avance)} *{avance:.0f}%*\n"
+    msg += f"👥 Técnicos que cumplieron: *{cumplen}/{len(data)}*\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+
+    top = max(data, key=lambda t: t.cerrados) if data else None
+    if top and top.cerrados > 0:
+        msg += f"🏆 *Top de la semana:* {top.nombre} ({top.cerrados}/{top.meta}) — {mensaje_animo(top.cerrados, top.meta)}\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n"
+
+    msg += f"👤 *Detalle por Técnico* (meta semanal: {CONFIG['meta_tecnico'] * CONFIG['dias_meta_semanal']})\n\n"
+    for t in data:
+        msg += f"{t.nombre}\n"
+        msg += f"{barra_progreso(t.avance)} {t.avance:.0f}% ({t.cerrados}/{t.meta}) — {mensaje_animo(t.cerrados, t.meta)}\n\n"
+
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "_🤖 Bot desarrollado por el Ing. Javier Trujillo_"
+    return msg
+
+
+def generar_mensaje_semanal_coordinacion(resumenes, desde, hasta):
+    fin = hasta - timedelta(days=1)
+    total_c = sum(r["cierres"] for r in resumenes.values())
+    total_m = sum(r["meta"] for r in resumenes.values())
+    avance  = min((total_c / total_m) * 100, 100) if total_m else 0
+    icono   = "🟢" if avance >= 100 else "🟡" if avance >= 50 else "🔴"
+
+    msg  = "📊 *RESUMEN PRODUCTIVIDAD SEMANAL*\n"
+    msg += f"📅 Semana {desde.strftime('%d/%m')} al {fin.strftime('%d/%m/%Y')}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"✅ Cierres totales: *{total_c}/{total_m}*\n"
+    msg += f"{icono} Avance general: {barra_progreso(avance)} *{avance:.0f}%*\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+    for r in REGIONALES:
+        res = resumenes.get(r["nombre"])
+        if not res:
+            msg += f"🌎 *{r['nombre']}*: sin datos\n\n"
+            continue
+        pct = min((res["cierres"] / res["meta"]) * 100, 100) if res["meta"] else 0
+        ico = "🟢" if pct >= 100 else "🟡" if pct >= 50 else "🔴"
+        msg += f"🌎 *{r['nombre']}*: {res['cierres']}/{res['meta']} {ico} *{pct:.0f}%*\n"
+        msg += f"   👥 Cumplieron: {res['cumplen']}/{res['tecnicos']}\n"
+        if res.get("top"):
+            msg += f"   🏆 {res['top']} ({res['top_cierres']})\n"
+        msg += "\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "_🤖 Bot desarrollado por el Ing. Javier Trujillo_"
+    return msg
+
+
+def productividad_semanal_regional(driver, r, asignados, desde, hasta):
+    """Descarga los cierres de la semana de una regional y devuelve (mensaje, resumen)."""
+    archivo = descargar_csv(driver, construir_url_csv_semana(r['filtro'], desde, hasta), f"SEMANA {r['nombre']}")
+    cerrados_sem = leer_csv(archivo, f"SEMANA {r['nombre']}")
+    data = procesar(asignados, cerrados_sem, factor_meta=CONFIG["dias_meta_semanal"])
+    data.sort(key=lambda t: (t.cerrados, t.avance), reverse=True)
+    total = cerrados_sem.get("__total__", 0)
+    meta_reg = r['meta_regional'] * CONFIG["dias_meta_semanal"]
+    top = data[0] if data else None
+    resumen = {
+        "cierres": total, "meta": meta_reg,
+        "cumplen": sum(1 for t in data if t.cerrados >= t.meta), "tecnicos": len(data),
+        "top": top.nombre if top and top.cerrados > 0 else None,
+        "top_cierres": top.cerrados if top else 0,
+    }
+    return generar_mensaje_semanal(r['nombre'], meta_reg, total, data, desde, hasta), resumen
 
 
 # =========================
@@ -516,6 +652,14 @@ def main():
     print(f"Regionales: {', '.join(r['nombre'] for r in REGIONALES)}")
     print("="*55 + "\n")
 
+    # Productividad semanal (viernes 5 pm): pendiente hasta que se envíe a cada regional y a Coordinación
+    estado_sem = None
+    if toca_semanal():
+        sem_desde, sem_hasta = semana_lun_vie()
+        estado_sem = cargar_estado_semanal(sem_desde)
+        if len(estado_sem["regionales"]) < len(REGIONALES) or not estado_sem["coordinacion"]:
+            logging.info(f"📊 Productividad semanal pendiente: semana del {sem_desde.strftime('%d/%m/%Y')}")
+
     driver = iniciar_driver()
     try:
         login(driver)
@@ -546,11 +690,33 @@ def main():
                 print(f"\n===== {r['nombre']} =====\n{msg}")
                 enviar_whatsapp(driver, r['grupo_wa'], msg)
 
+                # Productividad semanal (una vez por semana por regional)
+                if estado_sem is not None and r['nombre'] not in estado_sem["regionales"]:
+                    try:
+                        msg_sem, resumen = productividad_semanal_regional(driver, r, asignados, sem_desde, sem_hasta)
+                        print(f"\n===== SEMANAL {r['nombre']} =====\n{msg_sem}")
+                        enviar_whatsapp(driver, r['grupo_wa'], msg_sem)
+                        estado_sem["regionales"][r['nombre']] = resumen
+                        guardar_estado_semanal(estado_sem)
+                    except Exception as e_sem:
+                        logging.error(f"❌ Productividad semanal {r['nombre']}: {e_sem} — se reintenta en la próxima ejecución")
+
             except Exception as e_regional:
                 logging.error(f"❌ Error en regional {r['nombre']}: {e_regional}")
                 errores.append(r['nombre'])
                 logging.info(f"⏭️  Continuando con la siguiente regional...")
                 continue
+
+        # Resumen semanal a Coordinación cuando ya se envió a todas las regionales
+        if estado_sem is not None and not estado_sem["coordinacion"] and len(estado_sem["regionales"]) == len(REGIONALES):
+            try:
+                msg_coord = generar_mensaje_semanal_coordinacion(estado_sem["regionales"], sem_desde, sem_hasta)
+                print(f"\n===== SEMANAL COORDINACION =====\n{msg_coord}")
+                enviar_whatsapp(driver, CONFIG["grupo_coordinacion"], msg_coord)
+                estado_sem["coordinacion"] = True
+                guardar_estado_semanal(estado_sem)
+            except Exception as e_coord:
+                logging.error(f"❌ Resumen semanal a Coordinación: {e_coord} — se reintenta en la próxima ejecución")
 
         if errores:
             logging.warning(f"\n⚠️  Regionales con error: {', '.join(errores)}")
