@@ -374,17 +374,40 @@ def enviar_whatsapp(driver, grupo, msg):
 
     # Intento 1: scroll en lista de chats
     lista = driver.find_element(By.ID, "pane-side")
+    # Esperar a que la lista de chats esté cargada (pane-side aparece antes que los chats)
+    try:
+        WebDriverWait(driver, 30).until(
+            lambda d: len(d.find_elements(By.XPATH, '//div[@id="pane-side"]//span[@title]')) >= 5
+        )
+    except Exception:
+        logging.warning("  ⚠️  La lista de chats tardó en cargar, se intenta igual")
     driver.execute_script("arguments[0].scrollTop = 0", lista)
     time.sleep(0.5)
+    ultimo_error = None
     for _ in range(50):
-        try:
-            driver.find_element(By.XPATH, xpath_grupo).click()
-            encontrado = True
-            logging.info(f"  ✅ Grupo encontrado por scroll")
-            break
-        except Exception:
-            driver.execute_script("arguments[0].scrollTop += 150", lista)
-            time.sleep(0.1)
+        elementos = driver.find_elements(By.XPATH, xpath_grupo)
+        if elementos:
+            # Visible pero el clic puede fallar mientras WhatsApp sincroniza: probar clic JS
+            # y no hacer scroll (alejaría el grupo de la vista)
+            try:
+                elementos[0].click()
+                encontrado = True
+            except Exception as e:
+                ultimo_error = e
+                try:
+                    driver.execute_script("arguments[0].click();", elementos[0])
+                    encontrado = True
+                except Exception as e2:
+                    ultimo_error = e2
+            if encontrado:
+                logging.info(f"  ✅ Grupo encontrado por scroll")
+                break
+            time.sleep(1)
+            continue
+        driver.execute_script("arguments[0].scrollTop += 150", lista)
+        time.sleep(0.1)
+    if not encontrado and ultimo_error:
+        logging.warning(f"  ⚠️  Grupo visible pero el clic falló: {type(ultimo_error).__name__}")
 
     # Intento 2: buscar usando el input de búsqueda directo
     if not encontrado:
@@ -414,9 +437,12 @@ def enviar_whatsapp(driver, grupo, msg):
             time.sleep(2)
 
             resultado = WebDriverWait(driver, 8).until(
-                EC.element_to_be_clickable((By.XPATH, xpath_grupo))
+                EC.presence_of_element_located((By.XPATH, xpath_grupo))
             )
-            resultado.click()
+            try:
+                resultado.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", resultado)
             encontrado = True
             logging.info(f"  ✅ Grupo encontrado por búsqueda")
         except Exception as e:
